@@ -11,6 +11,7 @@
 #include "business/FileFilter.h"
 #include "business/Manifest.h"
 #include "business/SnapshotManager.h"
+#include "core/AesEncryptor.h"
 #include "core/BackupLock.h"
 #include "core/HashCalculator.h"
 #include "core/Logger.h"
@@ -31,6 +32,40 @@ std::wstring BackupManager::dataDirOf(const std::wstring& target) {
 }
 std::wstring BackupManager::historyPathOf(const std::wstring& target) {
     return target + L"\\history.log";
+}
+
+// 加密并写入文件：读取源文件全部内容，AES-256-CBC 加密后写入目标。
+// 加密文件格式：前 16 字节 IV，后续密文（PKCS7 填充）。
+static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
+                                const std::string& password, std::string& err) {
+    // 读取源文件
+    std::ifstream ifs(src.c_str(), std::ios::binary);
+    if (!ifs) { err = "cannot open source file"; return false; }
+    std::vector<uint8_t> plain((std::istreambuf_iterator<char>(ifs)),
+                                 std::istreambuf_iterator<char>());
+    ifs.close();
+
+    // 加密
+    AesEncryptor aes(password);
+    std::vector<uint8_t> cipher = aes.encrypt(plain.data(), plain.size());
+    if (cipher.empty()) { err = "encryption failed"; return false; }
+
+    // 写入目标（先写临时文件再原子替换，避免截断）
+    const std::wstring tmp = dst + L".baktmp.enc";
+    ::DeleteFileW(tmp.c_str());
+    std::ofstream ofs(tmp.c_str(), std::ios::binary | std::ios::trunc);
+    if (!ofs) { err = "cannot open temp file for write"; return false; }
+    ofs.write(reinterpret_cast<const char*>(cipher.data()), static_cast<std::streamsize>(cipher.size()));
+    ofs.flush();
+    if (!ofs) { ofs.close(); ::DeleteFileW(tmp.c_str()); err = "write encrypted file failed"; return false; }
+    ofs.close();
+
+    if (!::MoveFileExW(tmp.c_str(), dst.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        err = "atomic replace failed (error " + std::to_string(::GetLastError()) + ")";
+        ::DeleteFileW(tmp.c_str());
+        return false;
+    }
+    return true;
 }
 
 // 从当前 data/ 和 manifest.txt 创建快照。
@@ -365,7 +400,14 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         }
 
         std::string copyErr;
-        if (!FileCopier::copyFile(absSrc, absDst, &copyErr, cancel)) {
+        const bool useEncryption = (config.encryption == "aes256") && !config.password.empty();
+        bool copyOk = false;
+        if (useEncryption) {
+            copyOk = writeEncryptedFile(absSrc, absDst, config.password, copyErr);
+        } else {
+            copyOk = FileCopier::copyFile(absSrc, absDst, &copyErr, cancel);
+        }
+        if (!copyOk) {
             ++res.failed;
             res.errors.push_back(std::wstring(L"复制失败: ") + c.info.relativePath + L" - " +
                                  utf8ToWide(copyErr));
@@ -412,6 +454,9 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     manifest.meta.created = formatNowUtf8();
     manifest.meta.backupType = incremental ? "incremental" : "full";
     manifest.meta.fileCount = static_cast<uint64_t>(newEntries.size());
+    if (!config.encryption.empty() && config.encryption != "none") {
+        manifest.meta.encryption = config.encryption;
+    }
     manifest.entries = std::move(newEntries);
     manifest.rebuildIndex();
 

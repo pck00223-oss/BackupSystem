@@ -16,6 +16,7 @@ struct RestoreConfig {
     std::wstring restorePath;  // 恢复目标目录（不存在则创建）
     bool overwrite = false;    // 目标已存在且内容不同：true 覆盖，false 跳过
     std::wstring snapshot;     // 快照时间戳，空=从最新（根目录）恢复，非空=从指定快照恢复
+    std::string password;      // 解密密码（备份加密时需要）
 };
 
 class RestoreManager {

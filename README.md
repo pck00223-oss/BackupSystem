@@ -12,6 +12,7 @@
 | 数据恢复 | ✅ 已完成 | 恢复后 Hash 校验 + 元数据（修改时间），冲突跳过记为警告 |
 | 完整性校验 | ✅ 已完成 | `verify` 子命令：按 Manifest 校验 data/ 仓库，报告缺失/损坏；`--repair` 可自动用源文件重建损坏条目 |
 | 快照与时间点恢复 | ✅ 已完成 | `--keep-snapshots N` 保留最近 N 份完整快照（硬链接节省空间），`restore --snapshot <timestamp>` 从指定快照恢复，超过 N 份自动清理最旧 |
+| AES-256 加密 | ✅ 已完成 | `--encrypt aes256 --password <密码>` 备份时 AES-256-CBC 加密（IV+密文，SHA-256 派生密钥，自实现无第三方依赖），恢复时自动解密；空文件可加密 |
 | Manifest | ✅ 已完成 | 文本格式，可解释，UTF-8，原子写入，头部/数值/条目数校验 |
 | Hash 校验 | ✅ 已完成 | 自实现 SHA-256，无第三方依赖 |
 | 自定义筛选 | ✅ 已完成 | 扩展名 / 路径（目录段匹配）/ 大小 / 修改时间 / 空文件 |
@@ -100,6 +101,9 @@ build\backupapp.exe backup --source D:\MyData --target D:\Backup --type incremen
 # 注意：改小 --keep-snapshots 或改成 0 不会主动删除已有快照，下次备份后按新值清理
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full --keep-snapshots 5
 
+# AES-256 加密备份（自实现 AES，无第三方依赖；data/ 中存储 IV+密文，Manifest 记录原始 Hash/大小）
+build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full --encrypt aes256 --password mysecret
+
 # 自定义筛选：只备份 .cpp/.h，最近 30 天修改，大于 1KB
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --include-ext .cpp,.h
 
@@ -108,6 +112,9 @@ build\backupapp.exe restore --backup D:\Backup --to E:\Restored
 
 # 从指定快照恢复（时间点恢复，快照列表在 D:\Backup\snapshots\ 下）
 build\backupapp.exe restore --backup D:\Backup --to E:\Restored --snapshot 20260905-001128
+
+# 加密备份的恢复（需要相同密码；无密码或错误密码会失败，不会输出残缺文件）
+build\backupapp.exe restore --backup D:\Backup --to E:\Restored --password mysecret
 
 # 完整性校验：按 Manifest 检查 data/ 仓库是否有缺失或损坏
 build\backupapp.exe verify --backup D:\Backup

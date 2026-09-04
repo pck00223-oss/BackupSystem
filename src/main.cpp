@@ -87,10 +87,13 @@ void printHelp() {
         "      --include-ext .cpp,.h     仅备份这些扩展名\n"
         "      --exclude-ext .tmp,.log   排除这些扩展名\n"
         "      --keep-snapshots N        保留最近 N 份完整快照（0=不保留，默认0）\n"
+        "      --encrypt aes256           AES-256-CBC 加密备份数据（需配合 --password）\n"
+        "      --password <pwd>           加密/解密密码\n"
         "      --schedule HH:MM          程序常驻定时备份（不推荐长期自用）\n"
         "      --config <file>           配置文件（默认 config/default.conf）\n"
-        "  backupapp restore --backup <dir> --to <dir> [--overwrite] [--snapshot <timestamp>]\n"
+        "  backupapp restore --backup <dir> --to <dir> [--overwrite] [--snapshot <timestamp>] [--password <pwd>]\n"
         "      --snapshot <timestamp>    从指定快照恢复（不指定则从最新恢复）\n"
+        "      --password <pwd>          解密密码（备份加密时需要）\n"
         "  backupapp verify  --backup <dir> [--repair --source <dir>]\n"
         "  backupapp verify  --backup <dir> --snapshot <timestamp>  只校验指定快照\n"
         "  backupapp verify  --backup <dir> --all-snapshots         校验所有保留快照\n"
@@ -177,6 +180,25 @@ int cmdBackup(const std::vector<std::wstring>& args) {
         }
     }
 
+    // 加密：AES-256-CBC
+    const std::wstring encryptArg = getArg(args, L"--encrypt");
+    if (!encryptArg.empty()) {
+        if (encryptArg == L"aes256") {
+            config.encryption = "aes256";
+        } else if (encryptArg == L"none") {
+            config.encryption = "none";
+        } else {
+            std::cout << "错误：--encrypt 仅支持 none|aes256，当前: " << wideToUtf8(encryptArg) << "\n";
+            return 1;
+        }
+    }
+    const std::wstring passArg = getArg(args, L"--password");
+    if (!passArg.empty()) config.password = wideToUtf8(passArg);
+    if (config.encryption == "aes256" && config.password.empty()) {
+        std::cout << "错误：--encrypt aes256 需要同时指定 --password <密码>\n";
+        return 1;
+    }
+
     for (const auto& w : warnings) std::cout << "  [配置] " << wideToUtf8(w) << "\n";
 
     if (config.sourcePath.empty() || config.targetPath.empty()) {
@@ -240,6 +262,8 @@ int cmdRestore(const std::vector<std::wstring>& args) {
     config.restorePath = restoreTo;
     config.overwrite = hasArg(args, L"--overwrite");
     config.snapshot = getArg(args, L"--snapshot");  // 空=从最新恢复，非空=从指定快照恢复
+    const std::wstring passArg = getArg(args, L"--password");
+    if (!passArg.empty()) config.password = wideToUtf8(passArg);
 
     FileSystem::createDirectories(backupRoot + L"\\logs");
     Logger::instance().init(backupRoot + L"\\logs\\backup.log");

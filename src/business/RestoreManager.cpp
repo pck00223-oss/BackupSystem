@@ -4,6 +4,7 @@
 
 #include "business/Manifest.h"
 #include "business/SnapshotManager.h"
+#include "core/AesEncryptor.h"
 #include "core/HashCalculator.h"
 #include "core/Logger.h"
 #include "core/TimeUtil.h"
@@ -12,6 +13,41 @@
 #include "engine/FileSystem.h"
 
 namespace backup {
+
+namespace {
+
+// 解密并写入文件：读取加密文件（IV+密文），AES-256-CBC 解密后写入目标。
+bool decryptAndWriteFile(const std::wstring& src, const std::wstring& dst,
+                          const std::string& password, std::string& err) {
+    std::ifstream ifs(src.c_str(), std::ios::binary);
+    if (!ifs) { err = "cannot open encrypted file"; return false; }
+    std::vector<uint8_t> cipher((std::istreambuf_iterator<char>(ifs)),
+                                  std::istreambuf_iterator<char>());
+    ifs.close();
+
+    AesEncryptor aes(password);
+    bool decryptOk = false;
+    std::vector<uint8_t> plain = aes.decrypt(cipher.data(), cipher.size(), &decryptOk);
+    if (!decryptOk) { err = "decryption failed (wrong password or corrupted data)"; return false; }
+
+    const std::wstring tmp = dst + L".baktmp.dec";
+    ::DeleteFileW(tmp.c_str());
+    std::ofstream ofs(tmp.c_str(), std::ios::binary | std::ios::trunc);
+    if (!ofs) { err = "cannot open temp file for write"; return false; }
+    ofs.write(reinterpret_cast<const char*>(plain.data()), static_cast<std::streamsize>(plain.size()));
+    ofs.flush();
+    if (!ofs) { ofs.close(); ::DeleteFileW(tmp.c_str()); err = "write decrypted file failed"; return false; }
+    ofs.close();
+
+    if (!::MoveFileExW(tmp.c_str(), dst.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        err = "atomic replace failed (error " + std::to_string(::GetLastError()) + ")";
+        ::DeleteFileW(tmp.c_str());
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
 
 RestoreResult RestoreManager::run(const RestoreConfig& config,
                                   const CancelCheck& cancel,
@@ -107,7 +143,20 @@ RestoreResult RestoreManager::run(const RestoreConfig& config,
         }
 
         std::string copyErr;
-        if (!FileCopier::copyFile(srcAbs, dstAbs, &copyErr, cancel)) {
+        const bool encrypted = (manifest.meta.encryption == "aes256");
+        bool copyOk = false;
+        if (encrypted) {
+            if (config.password.empty()) {
+                ++res.failed;
+                res.errors.push_back(std::wstring(L"备份已加密，需要 --password 才能恢复: ") + rel);
+                log.error(L"RestoreManager", L"备份已加密，需要密码: " + rel);
+                continue;
+            }
+            copyOk = decryptAndWriteFile(srcAbs, dstAbs, config.password, copyErr);
+        } else {
+            copyOk = FileCopier::copyFile(srcAbs, dstAbs, &copyErr, cancel);
+        }
+        if (!copyOk) {
             ++res.failed;
             res.errors.push_back(std::wstring(L"恢复失败: ") + rel + L" - " + utf8ToWide(copyErr));
             log.error(L"RestoreManager", L"恢复失败: " + rel + L" - " + utf8ToWide(copyErr));

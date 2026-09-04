@@ -42,6 +42,9 @@ bool Manifest::saveToFile(const std::wstring& path, std::string* err) const {
     body += "created=" + meta.created + "\n";
     body += "type=" + meta.backupType + "\n";
     body += "file_count=" + std::to_string(meta.fileCount) + "\n";
+    if (!meta.encryption.empty() && meta.encryption != "none") {
+        body += "encryption=" + meta.encryption + "\n";
+    }
     for (const auto& e : entries) {
         body += "\n[file]\n";
         body += "path=" + wideToUtf8(e.info.relativePath) + "\n";
@@ -139,6 +142,7 @@ bool Manifest::loadFromFile(const std::wstring& path, std::string* err) {
             else if (key == "created") meta.created = val;
             else if (key == "type") meta.backupType = val;
             else if (key == "file_count") meta.fileCount = safeStoull(val, "file_count");
+            else if (key == "encryption") meta.encryption = val;
         } else {
             if (key == "path") cur.info.relativePath = utf8ToWide(val);
             else if (key == "type") cur.info.type = static_cast<FileType>(safeStoi(val, "type"));

@@ -25,6 +25,7 @@ public:
         std::string created;        // 创建时间文本
         std::string backupType;     // "full" / "incremental"
         uint64_t fileCount = 0;
+        std::string encryption;      // "none" / "aes256"
     };
 
     // 文件条目 = FileInfo + 备份内的数据存储相对路径。

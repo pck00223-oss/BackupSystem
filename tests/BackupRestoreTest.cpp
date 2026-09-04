@@ -830,6 +830,69 @@ TEST(Verify_Snapshot_CorruptionDetected) {
     CHECK(good.corrupted == 0);
 }
 
+// 回归测试：AES-256 加密备份 + 解密恢复
+TEST(Encryption_BackupRestore_Aes256) {
+    const std::wstring src = testutil::makeTempDir(L"enc_src");
+    const std::wstring tgt = testutil::makeTempDir(L"enc_tgt");
+    testutil::writeFile(src + L"secret.txt", "this is secret data");
+    testutil::writeFile(src + L"public.txt", "public data");
+    testutil::writeFile(src + L"empty.txt", "");  // 空文件也应能加密
+
+    BackupConfig cfg;
+    cfg.sourcePath = src;
+    cfg.targetPath = tgt;
+    cfg.mode = BackupMode::Full;
+    cfg.encryption = "aes256";
+    cfg.password = "testpassword123";
+
+    // 加密备份
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+    CHECK(r1.backedUp == 3);
+
+    // 验证 data/ 中的文件是加密的（不应包含明文）
+    std::string encContent = testutil::readFile(tgt + L"\\data\\secret.txt");
+    CHECK(encContent.find("secret") == std::string::npos);
+
+    // 验证 Manifest 记录了加密方式
+    Manifest manifest;
+    std::string loadErr;
+    CHECK(manifest.loadFromFile(tgt + L"\\manifest.txt", &loadErr));
+    CHECK(manifest.meta.encryption == "aes256");
+
+    // 无密码恢复应失败
+    RestoreConfig rcfg;
+    rcfg.backupRoot = tgt;
+    rcfg.restorePath = tgt + L"\\restore_nopass";
+    rcfg.overwrite = true;
+    RestoreResult r2 = RestoreManager::run(rcfg);
+    CHECK(!r2.success);
+    CHECK(r2.failed == 3);
+
+    // 错误密码恢复应失败
+    rcfg.restorePath = tgt + L"\\restore_wrong";
+    rcfg.password = "wrongpassword";
+    RestoreResult r3 = RestoreManager::run(rcfg);
+    CHECK(!r3.success);
+    CHECK(r3.failed == 3);
+
+    // 正确密码恢复应成功
+    rcfg.restorePath = tgt + L"\\restore_ok";
+    rcfg.password = "testpassword123";
+    RestoreResult r4 = RestoreManager::run(rcfg);
+    CHECK(r4.success);
+    CHECK(r4.restored == 3);
+    CHECK(r4.verified == 3);
+
+    // 验证恢复内容正确
+    CHECK(testutil::readFile(rcfg.restorePath + L"\\secret.txt") == "this is secret data");
+    CHECK(testutil::readFile(rcfg.restorePath + L"\\public.txt") == "public data");
+    CHECK(testutil::readFile(rcfg.restorePath + L"\\empty.txt") == "");
+
+    testutil::removeAll(src);
+    testutil::removeAll(tgt);
+}
+
 // 回归测试：verify --repair 自动修复损坏文件
 TEST(Verify_Repair_CorruptedFile_RebuiltFromSource) {
     TestEnv env;
