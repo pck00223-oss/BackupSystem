@@ -732,6 +732,7 @@ static INT_PTR CALLBACK inputDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
                 200, 70, 80, 28, hDlg, (HMENU)IDCANCEL, nullptr, nullptr);
 
             SetFocus(data->hEdit);
+            SendMessageW(data->hEdit, EM_SETSEL, 0, -1);  // 选中默认文本，直接输入即覆盖
             return 0;
         }
         case WM_COMMAND:
