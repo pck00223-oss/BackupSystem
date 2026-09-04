@@ -756,6 +756,43 @@ TEST(Snapshot_Disabled_NoSnapshotsDir) {
     CHECK(!FileSystem::exists(env.target + L"\\snapshots"));
 }
 
+// 回归测试：快照创建在删除清理之后，已删除文件不出现在新快照 data 中
+TEST(Snapshot_DeletedFile_NotInNewSnapshotData) {
+    TestEnv env;
+    testutil::writeFile(env.src + L"a.txt", "a");
+    testutil::writeFile(env.src + L"b.txt", "b");
+
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+    cfg.keepSnapshots = 2;
+
+    // 第1次全量备份
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+
+    // 删除 b.txt，第2次增量备份
+    FileSystem::deleteFile(env.src + L"\\b.txt");
+    cfg.mode = BackupMode::Incremental;
+    BackupResult r2 = BackupManager::run(cfg);
+    CHECK(r2.success);
+
+    // 最新快照的 data/ 中不应有 b.txt
+    std::vector<SnapshotInfo> snaps = SnapshotManager::listSnapshots(env.target);
+    CHECK(snaps.size() == 2);
+    const SnapshotInfo& latest = snaps.back();
+    CHECK(!FileSystem::exists(latest.path + L"\\data\\b.txt"));
+    CHECK(FileSystem::exists(latest.path + L"\\data\\a.txt"));
+
+    // 最新快照的 manifest 中不应有 b.txt
+    Manifest latestManifest;
+    std::string loadErr;
+    CHECK(latestManifest.loadFromFile(latest.path + L"\\manifest.txt", &loadErr));
+    CHECK(latestManifest.find(L"b.txt") == nullptr);
+    CHECK(latestManifest.find(L"a.txt") != nullptr);
+}
+
 // 回归测试：verify --repair 自动修复损坏文件
 TEST(Verify_Repair_CorruptedFile_RebuiltFromSource) {
     TestEnv env;

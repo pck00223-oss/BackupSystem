@@ -22,7 +22,8 @@ struct VerifyResult {
     uint64_t repaired = 0;    // 自动修复成功的条目数
     uint64_t skipped = 0;     // 非文件条目（目录/符号链接），不校验
     bool success = false;      // missing == 0 && corrupted == 0 && residual == 0
-    std::vector<std::wstring> errors;  // 详细错误列表
+    std::vector<std::wstring> errors;          // 详细错误列表（缺失/损坏/残留）
+    std::vector<std::wstring> repairedDetails;  // 自动修复成功的条目明细
 };
 
 struct VerifyOptions {

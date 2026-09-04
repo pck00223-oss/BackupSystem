@@ -23,6 +23,28 @@ std::wstring SnapshotManager::snapshotManifestPath(const std::wstring& targetPat
     return snapshotDir(targetPath, timestamp) + L"\\manifest.txt";
 }
 
+namespace {
+
+// 检查字符串指定区间是否全为数字字符。
+bool isAllDigits(const std::wstring& s, size_t start, size_t len) {
+    if (start + len > s.size()) return false;
+    return std::all_of(s.begin() + static_cast<ptrdiff_t>(start),
+                        s.begin() + static_cast<ptrdiff_t>(start + len),
+                        [](wchar_t c) { return c >= L'0' && c <= L'9'; });
+}
+
+// 解析快照时间戳中的序号后缀（"-N"），无后缀返回 0。
+int parseSnapshotSeq(const std::wstring& timestamp) {
+    if (timestamp.size() <= 16 || timestamp[15] != L'-') return 0;
+    try {
+        return std::stoi(timestamp.substr(16));
+    } catch (...) {
+        return 0;
+    }
+}
+
+}  // namespace
+
 std::vector<SnapshotInfo> SnapshotManager::listSnapshots(const std::wstring& targetPath) {
     std::vector<SnapshotInfo> result;
     const std::wstring snapshotsRoot = targetPath + L"\\snapshots";
@@ -40,19 +62,10 @@ std::vector<SnapshotInfo> SnapshotManager::listSnapshots(const std::wstring& tar
         // 快照目录名应为时间戳格式 "YYYYMMDD-HHMMSS"（15 字符），
         // 或同秒内多次备份的带序号格式 "YYYYMMDD-HHMMSS-N"（N 为数字）。
         if (name.size() < 15 || name[8] != L'-') continue;
-        bool valid = true;
-        for (size_t i = 0; i < 15; ++i) {
-            if (i == 8) continue;
-            if (name[i] < L'0' || name[i] > L'9') { valid = false; break; }
-        }
-        if (!valid) continue;
+        if (!isAllDigits(name, 0, 8) || !isAllDigits(name, 9, 6)) continue;
         // 检查可选的序号后缀 "-N"
         if (name.size() > 15) {
-            if (name[15] != L'-') continue;
-            for (size_t i = 16; i < name.size(); ++i) {
-                if (name[i] < L'0' || name[i] > L'9') { valid = false; break; }
-            }
-            if (!valid) continue;
+            if (name[15] != L'-' || !isAllDigits(name, 16, name.size() - 16)) continue;
         }
 
         SnapshotInfo info;
@@ -62,9 +75,13 @@ std::vector<SnapshotInfo> SnapshotManager::listSnapshots(const std::wstring& tar
     } while (FindNextFileW(hFind, &fd));
     FindClose(hFind);
 
-    // 按时间戳升序（最旧在前）
-    std::sort(result.begin(), result.end(),
-              [](const SnapshotInfo& a, const SnapshotInfo& b) { return a.timestamp < b.timestamp; });
+    // 按时间戳升序（最旧在前）；同秒内按序号数值升序，避免 "-10" 排在 "-2" 前面。
+    std::sort(result.begin(), result.end(), [](const SnapshotInfo& a, const SnapshotInfo& b) {
+        const std::wstring tsA = a.timestamp.substr(0, 15);
+        const std::wstring tsB = b.timestamp.substr(0, 15);
+        if (tsA != tsB) return tsA < tsB;
+        return parseSnapshotSeq(a.timestamp) < parseSnapshotSeq(b.timestamp);
+    });
     return result;
 }
 

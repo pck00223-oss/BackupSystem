@@ -433,22 +433,8 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     }
     stagedPaths.clear();
 
-    // ---- 8.5 快照：保留最近 N 份完整快照 ----
-    if (config.keepSnapshots > 0) {
-        SnapshotInfo snap = SnapshotManager::createSnapshot(config.targetPath);
-        std::wstring snapErr;
-        if (createSnapshotFromCurrent(config.targetPath, snap, snapErr)) {
-            const int cleaned = SnapshotManager::cleanupOldSnapshots(config.targetPath, config.keepSnapshots);
-            log.info(L"BackupManager", L"已创建快照 " + snap.timestamp +
-                     (cleaned > 0 ? L"，清理旧快照 " + std::to_wstring(cleaned) + L" 份" : L""));
-        } else {
-            log.warn(L"BackupManager", L"创建快照失败: " + snapErr);
-            // 快照失败不影响备份结果，清理空快照目录
-            FileSystem::removeAll(snap.path);
-        }
-    }
-
     // 增量备份：清理 data/ 里已删除文件的旧数据，避免长期占空间
+    // 注意：必须在快照创建之前执行，否则快照会带着已删除文件的孤儿数据。
     if (incremental) {
         for (const auto& c : changes) {
             if (c.change != FileChangeType::Deleted) continue;
@@ -460,6 +446,23 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
                 // 目录->文件互换时该路径已是新文件，旧树在 stagedPaths 中另行清理。
                 FileSystem::removeAll(oldData);
             }
+        }
+    }
+
+    // ---- 8.5 快照：保留最近 N 份完整快照 ----
+    // 必须在删除清理之后创建，确保快照 data 与快照 manifest 严格一致。
+    if (config.keepSnapshots > 0) {
+        SnapshotInfo snap = SnapshotManager::createSnapshot(config.targetPath);
+        std::wstring snapErr;
+        if (createSnapshotFromCurrent(config.targetPath, snap, snapErr)) {
+            const int cleaned = SnapshotManager::cleanupOldSnapshots(config.targetPath, config.keepSnapshots);
+            log.info(L"BackupManager", L"已创建快照 " + snap.timestamp +
+                     (cleaned > 0 ? L"，清理旧快照 " + std::to_wstring(cleaned) + L" 份" : L""));
+        } else {
+            log.warn(L"BackupManager", L"创建快照失败: " + snapErr);
+            res.warnings.push_back(std::wstring(L"快照创建失败: ") + snapErr);
+            // 快照失败不影响备份结果，清理空快照目录
+            FileSystem::removeAll(snap.path);
         }
     }
 

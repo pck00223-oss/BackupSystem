@@ -18,6 +18,7 @@
 #include "business/BackupManager.h"
 #include "business/RestoreManager.h"
 #include "business/VerifyManager.h"
+#include "core/BackupLock.h"
 #include "core/Logger.h"
 #include "core/TimeUtil.h"
 #include "core/Utf.h"
@@ -149,7 +150,7 @@ int cmdBackup(const std::vector<std::wstring>& args) {
     if (!tgt.empty()) config.targetPath = tgt;
 
     const std::wstring type = getArg(args, L"--type");
-    if (type == L"incremental" || type == L"inc") config.mode = BackupMode::Incremental;
+    if (type == L"incremental" || type == L"inc" || type == L"incr") config.mode = BackupMode::Incremental;
     else if (type == L"full") config.mode = BackupMode::Full;
 
     const std::wstring inc = getArg(args, L"--include-ext");
@@ -162,7 +163,11 @@ int cmdBackup(const std::vector<std::wstring>& args) {
     if (!keepSnap.empty()) {
         try {
             const int n = std::stoi(keepSnap);
-            if (n >= 0) config.keepSnapshots = n;
+            if (n < 0) {
+                std::cout << "错误：--keep-snapshots 不能为负数，当前: " << wideToUtf8(keepSnap) << "\n";
+                return 1;
+            }
+            config.keepSnapshots = n;
         } catch (...) {
             std::cout << "错误：--keep-snapshots 应为非负整数，当前: " << wideToUtf8(keepSnap) << "\n";
             return 1;
@@ -281,6 +286,18 @@ int cmdVerify(const std::vector<std::wstring>& args) {
     if (vopts.repair) {
         std::cout << "修复模式 : 开启 (源目录: " << wideToUtf8(vopts.sourcePath) << ")\n";
     }
+
+    // --repair 会向 data/ 写文件，需要获取单一实例锁，防止与备份同时运行互相覆盖。
+    std::unique_ptr<BackupLockGuard> lockGuard;
+    if (vopts.repair) {
+        lockGuard = std::make_unique<BackupLockGuard>(backupRoot);
+        if (!lockGuard->acquired()) {
+            std::cout << "错误：无法获取备份锁: " << lockGuard->error()
+                      << "（另一个备份进程可能正在运行）\n";
+            return 1;
+        }
+    }
+
     const VerifyResult res = VerifyManager::run(backupRoot, vopts);
     std::cout << "                                        \r";
 
@@ -292,6 +309,7 @@ int cmdVerify(const std::vector<std::wstring>& args) {
     std::cout << "跳过     : " << res.skipped << " (目录/符号链接)\n";
     std::cout << "残留     : " << res.residual << " (.baktmp/.baktmp.old)\n";
     std::cout << "状态     : " << (res.success ? "完整" : "不完整") << "\n";
+    for (const auto& e : res.repairedDetails) std::cout << "  " << wideToUtf8(e) << "\n";
     for (const auto& e : res.errors) std::cout << "  " << wideToUtf8(e) << "\n";
     std::cout << "================================\n";
     return res.success ? 0 : 1;
@@ -356,7 +374,23 @@ int cmdSchedule(const std::vector<std::wstring>& args) {
         const std::wstring type = getArg(args, L"--type", L"full");
         const std::wstring modeArg = (type == L"inc" || type == L"incremental") ? L"incremental" : L"full";
 
-        // 构造任务执行的命令行参数：backupapp backup --source <src> --target <tgt> --type <mode>
+        // 解析 --keep-snapshots（可选，非负整数）
+        const std::wstring keepSnapArg = getArg(args, L"--keep-snapshots");
+        int keepSnapshots = -1;  // -1 表示未指定
+        if (!keepSnapArg.empty()) {
+            try {
+                keepSnapshots = std::stoi(keepSnapArg);
+                if (keepSnapshots < 0) {
+                    std::cout << "错误：--keep-snapshots 不能为负数，当前: " << wideToUtf8(keepSnapArg) << "\n";
+                    return 1;
+                }
+            } catch (...) {
+                std::cout << "错误：--keep-snapshots 应为非负整数，当前: " << wideToUtf8(keepSnapArg) << "\n";
+                return 1;
+            }
+        }
+
+        // 构造任务执行的命令行参数：backupapp backup --source <src> --target <tgt> --type <mode> [--keep-snapshots N]
         // 路径含空格或引号时用引号包裹（内部引号转义）
         const auto quote = [](const std::wstring& s) -> std::wstring {
             if (s.find(L' ') == std::wstring::npos && s.find(L'"') == std::wstring::npos) return s;
@@ -368,10 +402,13 @@ int cmdSchedule(const std::vector<std::wstring>& args) {
             }
             return L"\"" + escaped + L"\"";
         };
-        const std::wstring arguments =
+        std::wstring arguments =
             L"backup --source " + quote(src) +
             L" --target " + quote(tgt) +
             L" --type " + modeArg;
+        if (keepSnapshots >= 0) {
+            arguments += L" --keep-snapshots " + std::to_wstring(keepSnapshots);
+        }
 
         const std::wstring exe = executablePath();
         std::string err;

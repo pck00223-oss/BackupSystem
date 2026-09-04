@@ -98,7 +98,7 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const VerifyOpti
                 if (tryRepairEntry(e, dataDir, opts.sourcePath, repairErr)) {
                     ++res.repaired;
                     ++res.passed;
-                    res.errors.push_back(std::wstring(L"[已修复] 缺失文件已从源目录重建: ") + e.info.relativePath);
+                    res.repairedDetails.push_back(std::wstring(L"[已修复] 缺失文件已从源目录重建: ") + e.info.relativePath);
                     continue;
                 }
                 ++res.missing;
@@ -124,7 +124,7 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const VerifyOpti
                 if (tryRepairEntry(e, dataDir, opts.sourcePath, repairErr)) {
                     ++res.repaired;
                     ++res.passed;
-                    res.errors.push_back(std::wstring(L"[已修复] 大小不符文件已从源目录重建: ") + e.info.relativePath);
+                    res.repairedDetails.push_back(std::wstring(L"[已修复] 大小不符文件已从源目录重建: ") + e.info.relativePath);
                     continue;
                 }
                 ++res.corrupted;
@@ -153,7 +153,7 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const VerifyOpti
                 if (tryRepairEntry(e, dataDir, opts.sourcePath, repairErr)) {
                     ++res.repaired;
                     ++res.passed;
-                    res.errors.push_back(std::wstring(L"[已修复] Hash 不一致文件已从源目录重建: ") + e.info.relativePath);
+                    res.repairedDetails.push_back(std::wstring(L"[已修复] Hash 不一致文件已从源目录重建: ") + e.info.relativePath);
                     continue;
                 }
                 ++res.corrupted;

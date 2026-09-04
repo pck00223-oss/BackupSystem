@@ -115,6 +115,14 @@ bool ConfigLoader::parseLines(const std::vector<std::string>& lines,
             out.filter.skipEmptyFiles = (val == "1" || val == "true" || val == "yes");
         } else if (key == "overwrite_restore") {
             out.overwriteOnRestore = (val == "1" || val == "true" || val == "yes");
+        } else if (key == "keep_snapshots") {
+            try {
+                const int n = std::stoi(val);
+                if (n >= 0) out.keepSnapshots = n;
+                else warnings.push_back(L"keep_snapshots 不能为负数，忽略: " + utf8ToWide(val));
+            } catch (...) {
+                warnings.push_back(L"keep_snapshots 格式无效，忽略: " + utf8ToWide(val));
+            }
         } else {
             warnings.push_back(L"未知配置项: " + utf8ToWide(key));
         }
