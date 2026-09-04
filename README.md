@@ -97,6 +97,7 @@ build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --type incremental
 
 # 保留最近 5 份快照（硬链接节省空间，超过 5 份自动清理最旧）
+# 注意：改小 --keep-snapshots 或改成 0 不会主动删除已有快照，下次备份后按新值清理
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full --keep-snapshots 5
 
 # 自定义筛选：只备份 .cpp/.h，最近 30 天修改，大于 1KB
@@ -112,6 +113,7 @@ build\backupapp.exe restore --backup D:\Backup --to E:\Restored --snapshot 20260
 build\backupapp.exe verify --backup D:\Backup
 
 # 完整性校验 + 自动修复：发现损坏/缺失时，用源目录文件重建（源文件 Hash 必须与 Manifest 一致）
+# 注意：当前 verify 只校验根目录 data/，不逐份校验 snapshots/*/data（快照数据完整性在恢复时校验）
 build\backupapp.exe verify --backup D:\Backup --repair --source D:\MyData
 
 # 注册为 Windows 计划任务（推荐长期自用）：每天 20:00 自动备份，完成后退出，无需程序常驻

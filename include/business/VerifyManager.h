@@ -31,6 +31,8 @@ struct VerifyOptions {
     std::function<void(const std::wstring&)> progress;  // 进度回调（当前相对路径）
     bool repair = false;                                 // 发现损坏/缺失时，用源文件自动修复
     std::wstring sourcePath;                             // 源目录路径（repair 时需要）
+    // 注意：repair 模式会向 data/ 写文件。CLI 层已在 --repair 时获取 BackupLock；
+    // 若以库方式直接调用 VerifyManager::run(repair=true)，调用方需自行保证不与备份并发。
 };
 
 class VerifyManager {
