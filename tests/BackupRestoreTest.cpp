@@ -7,6 +7,7 @@
 #include "business/BackupManager.h"
 #include "business/Manifest.h"
 #include "business/RestoreManager.h"
+#include "business/VerifyManager.h"
 #include "app/TaskScheduler.h"
 #include "core/HashCalculator.h"
 #include "core/TimeUtil.h"
@@ -186,6 +187,52 @@ TEST(Restore_ConflictPolicy) {
     RestoreResult r2 = RestoreManager::run(rcfg);
     CHECK(r2.success);
     CHECK_EQ(hashOf(env.restore + L"\\a.txt"), hashOf(env.src + L"a.txt"));
+}
+
+TEST(Verify_HealthyBackup) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    CHECK(BackupManager::run(cfg).success);
+
+    VerifyResult res = VerifyManager::run(env.target);
+    CHECK(res.success);
+    CHECK_EQ(res.total, uint64_t(4));  // a.txt / b.cpp / docs\sub\c.txt / empty.txt
+    CHECK_EQ(res.passed, uint64_t(4));
+    CHECK_EQ(res.missing, uint64_t(0));
+    CHECK_EQ(res.corrupted, uint64_t(0));
+}
+
+TEST(Verify_MissingFile) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    CHECK(BackupManager::run(cfg).success);
+
+    CHECK(FileSystem::deleteFile(env.target + L"\\data\\a.txt"));
+    VerifyResult res = VerifyManager::run(env.target);
+    CHECK(!res.success);
+    CHECK_EQ(res.missing, uint64_t(1));
+    CHECK_EQ(res.passed, uint64_t(3));
+    CHECK_EQ(res.corrupted, uint64_t(0));
+}
+
+TEST(Verify_CorruptedFile) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    CHECK(BackupManager::run(cfg).success);
+
+    // 同长度改写内容，确保走 Hash 校验而不是大小检查
+    testutil::writeFile(env.target + L"\\data\\a.txt", "HELLO WORLD");
+    VerifyResult res = VerifyManager::run(env.target);
+    CHECK(!res.success);
+    CHECK_EQ(res.corrupted, uint64_t(1));
+    CHECK_EQ(res.passed, uint64_t(3));
+    CHECK_EQ(res.missing, uint64_t(0));
 }
 
 TEST(Backup_NonExistentSource) {

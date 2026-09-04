@@ -32,7 +32,8 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot) {
         }
         ++res.total;
 
-        const std::wstring dataPath = dataDir + L"\\" + e.info.relativePath;
+        // 与 RestoreManager 保持一致：使用 Manifest 中记录的数据存储路径。
+        const std::wstring dataPath = dataDir + L"\\" + e.dataPath;
 
         // 2a. 检查文件是否存在
         if (!FileSystem::exists(dataPath)) {
