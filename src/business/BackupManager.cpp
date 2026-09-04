@@ -272,9 +272,10 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     const bool hasPrevious = previous.loadFromFile(manifestPath, nullptr);
     const bool incremental = (config.mode == BackupMode::Incremental) && hasPrevious;
 
-    // ---- 4b. 增量前校验加密方式+密码一致，防止生成"混血"仓库 ----
+    // ---- 4b. 增量/全量前校验加密方式+密码一致，防止生成"混血"仓库 ----
     // 场景：第一次加密备份，第二次不加密/换密码 → 未变化文件用旧加密，变化文件用新加密，恢复时部分解不开。
-    if (incremental) {
+    // 全量模式下也做比较，未变化文件会跳过复制，所以同样需要校验。
+    if (hasPrevious) {
         const bool prevEncrypted = (!previous.meta.encryption.empty() && previous.meta.encryption != "none");
         const bool curEncrypted = (config.encryption == "aes256") && !config.password.empty();
         if (prevEncrypted != curEncrypted) {
@@ -305,16 +306,20 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
 
     // ---- 5. 比较 ----
     std::vector<ChangeRecord> changes;
-    if (incremental) {
+    if (hasPrevious) {
+        // 有旧 Manifest 时，增量和全量都做比较：
+        // - 统计准确（新增/修改/未变化）
+        // - 未变化文件跳过复制，节省时间
+        // - 全量模式同样反映当前源目录状态
         FileComparator::HashProvider hashProvider =
             [&config](const FileInfo& info, std::string& outHash) -> bool {
             return HashCalculator::fileSha256(config.sourcePath + L"\\" + info.relativePath,
                                               outHash);
         };
         changes = FileComparator::compare(files, previous, hashProvider);
-        log.info(L"BackupManager", L"增量比较完成");
+        log.info(L"BackupManager", incremental ? L"增量比较完成" : L"全量比较完成");
     } else {
-        // 全量：所有文件进入备份集合
+        // 无旧 Manifest（首次备份）：所有文件进入备份集合
         changes.reserve(files.size());
         for (const auto& f : files) {
             ChangeRecord rec;
@@ -483,7 +488,7 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     }
 
     // ---- 7. 组装新 Manifest：未变化文件沿用旧记录 ----
-    if (incremental) {
+    if (hasPrevious) {
         for (const auto& c : changes) {
             if (c.change != FileChangeType::Unchanged) continue;
             const Manifest::Entry* old = previous.find(c.info.relativePath);
@@ -507,7 +512,7 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     manifest.meta.backupId = wideToUtf8(res.backupId);
     manifest.meta.sourcePath = config.sourcePath;
     manifest.meta.created = formatNowUtf8();
-    manifest.meta.backupType = incremental ? "incremental" : "full";
+    manifest.meta.backupType = (config.mode == BackupMode::Incremental) ? "incremental" : "full";
     manifest.meta.fileCount = static_cast<uint64_t>(newEntries.size());
     if (!config.encryption.empty() && config.encryption != "none") {
         manifest.meta.encryption = config.encryption;
@@ -534,9 +539,9 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     }
     stagedPaths.clear();
 
-    // 增量备份：清理 data/ 里已删除文件的旧数据，避免长期占空间
+    // 清理 data/ 里已删除文件的旧数据，避免长期占空间
     // 注意：必须在快照创建之前执行，否则快照会带着已删除文件的孤儿数据。
-    if (incremental) {
+    if (hasPrevious) {
         for (const auto& c : changes) {
             if (c.change != FileChangeType::Deleted) continue;
             const std::wstring oldData = dataDir + L"\\" + c.info.relativePath;
