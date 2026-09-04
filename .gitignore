@@ -1,0 +1,21 @@
+# Build
+build/
+build-*/
+cmake-build-*/
+out/
+
+# 编译产物
+*.o
+*.obj
+*.exe
+*.exe~
+*.dll
+*.lib
+*.a
+*.ilk
+*.pdb
+
+# IDE
+.vs/
+.idea/
+*.user

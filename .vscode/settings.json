@@ -1,0 +1,8 @@
+{
+  // VSCode + CMake Tools 配置（本机使用 MinGW-w64 + Ninja）
+  "cmake.generator": "Ninja",
+  "cmake.configureArgs": ["-DCMAKE_BUILD_TYPE=Release"],
+  "cmake.buildDirectory": "${workspaceFolder}/build",
+  "files.encoding": "utf8",
+  "C_Cpp.default.cppStandard": "c++17"
+}

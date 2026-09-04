@@ -1,0 +1,131 @@
+// RestoreManager.cpp - 数据恢复实现
+// 流程（需求文档 7.2）：读取 Manifest -> 创建目录 -> 恢复文件 -> 恢复元数据 -> Hash 校验
+#include "business/RestoreManager.h"
+
+#include "business/Manifest.h"
+#include "core/HashCalculator.h"
+#include "core/Logger.h"
+#include "core/TimeUtil.h"
+#include "core/Utf.h"
+#include "engine/FileCopier.h"
+#include "engine/FileSystem.h"
+
+namespace backup {
+
+RestoreResult RestoreManager::run(const RestoreConfig& config,
+                                  const CancelCheck& cancel,
+                                  const Progress& progress) {
+    RestoreResult res;
+    res.backupRoot = config.backupRoot;
+    res.restorePath = config.restorePath;
+    res.startTime = formatNowWide();
+
+    Logger& log = Logger::instance();
+    log.info(L"RestoreManager", L"恢复开始");
+
+    const std::wstring manifestPath = config.backupRoot + L"\\manifest.txt";
+    Manifest manifest;
+    std::string err;
+    if (!manifest.loadFromFile(manifestPath, &err)) {
+        res.success = false;
+        res.errors.push_back(std::wstring(L"读取 Manifest 失败（备份数据无效）: ") + utf8ToWide(err));
+        log.error(L"RestoreManager", L"读取 Manifest 失败: " + utf8ToWide(err));
+        res.endTime = formatNowWide();
+        return res;
+    }
+
+    if (!FileSystem::createDirectories(config.restorePath)) {
+        res.success = false;
+        res.errors.push_back(std::wstring(L"无法创建恢复目录: ") + config.restorePath);
+        log.error(L"RestoreManager", L"无法创建恢复目录: " + config.restorePath);
+        res.endTime = formatNowWide();
+        return res;
+    }
+
+    const std::wstring dataDir = config.backupRoot + L"\\data";
+    log.info(L"RestoreManager",
+             L"Manifest 包含 " + std::to_wstring(manifest.entries.size()) + L" 个条目, 源=" +
+                 manifest.meta.sourcePath);
+
+    for (const auto& e : manifest.entries) {
+        if (e.info.type != FileType::File) continue;  // 目录结构按文件相对路径创建
+        if (cancel && cancel()) {
+            res.cancelled = true;
+            res.errors.push_back(L"恢复被用户取消");
+            log.warn(L"RestoreManager", L"恢复被用户取消");
+            break;
+        }
+        if (progress) progress(e.info.relativePath);
+
+        const std::wstring rel = e.info.relativePath;
+        const std::wstring dstAbs = config.restorePath + L"\\" + rel;
+        const std::wstring srcAbs = dataDir + L"\\" + e.dataPath;
+
+        const size_t pos = dstAbs.find_last_of(L"\\/");
+        if (pos != std::wstring::npos) {
+            FileSystem::createDirectories(dstAbs.substr(0, pos));
+        }
+
+        // ---- 冲突处理（需求文档 R05）----
+        if (FileSystem::exists(dstAbs)) {
+            std::string existingHash;
+            const bool hashOk = HashCalculator::fileSha256(dstAbs, existingHash);
+            if (hashOk && !e.info.hash.empty() && existingHash == e.info.hash) {
+                ++res.skipped;  // 已存在且内容一致，跳过
+                continue;
+            }
+            if (!config.overwrite) {
+                ++res.skipped;
+                res.errors.push_back(std::wstring(L"目标文件已存在且内容不同, 已跳过: ") + rel +
+                                     L"（使用覆盖选项可替换）");
+                continue;
+            }
+            if (!FileSystem::deleteFile(dstAbs)) {
+                ++res.failed;
+                res.errors.push_back(std::wstring(L"无法覆盖目标文件: ") + rel);
+                log.error(L"RestoreManager", L"无法覆盖: " + rel);
+                continue;
+            }
+        }
+
+        std::string copyErr;
+        if (!FileCopier::copyFile(srcAbs, dstAbs, &copyErr, cancel)) {
+            ++res.failed;
+            res.errors.push_back(std::wstring(L"恢复失败: ") + rel + L" - " + utf8ToWide(copyErr));
+            log.error(L"RestoreManager", L"恢复失败: " + rel + L" - " + utf8ToWide(copyErr));
+            continue;
+        }
+
+        // ---- 恢复后 Hash 校验 ----
+        std::string dstHash;
+        if (HashCalculator::fileSha256(dstAbs, dstHash)) {
+            if (!e.info.hash.empty() && dstHash != e.info.hash) {
+                ++res.hashMismatch;
+                res.errors.push_back(std::wstring(L"恢复后 Hash 校验不一致: ") + rel);
+                log.error(L"RestoreManager", L"Hash 校验不一致: " + rel);
+            } else {
+                ++res.verified;
+            }
+        }
+
+        // ---- 恢复元数据（修改时间）----
+        if (e.info.modifiedTime != 0) {
+            FileSystem::setFileTimes(dstAbs, 0, e.info.modifiedTime);
+        }
+
+        ++res.restored;
+    }
+
+    res.endTime = formatNowWide();
+    res.success = (res.failed == 0 && res.hashMismatch == 0);
+
+    log.info(L"RestoreManager",
+             (res.success ? std::wstring(L"恢复完成: ") : std::wstring(L"恢复完成(有问题): ")) +
+                 L"恢复 " + std::to_wstring(res.restored) + L" 个文件, 跳过 " +
+                 std::to_wstring(res.skipped) + L", 失败 " + std::to_wstring(res.failed) +
+                 L", 校验 " + std::to_wstring(res.verified) + L", 不一致 " +
+                 std::to_wstring(res.hashMismatch));
+    return res;
+}
+
+}  // namespace backup

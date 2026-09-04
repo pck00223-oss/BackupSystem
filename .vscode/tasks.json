@@ -1,0 +1,58 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build (Release)",
+      "type": "shell",
+      "command": "cmake --build build",
+      "group": { "kind": "build", "isDefault": true },
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "build (strict warnings)",
+      "type": "shell",
+      "command": "cmake -S . -B build-strict -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSTRICT_WARNINGS=ON; cmake --build build-strict",
+      "group": "build",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "build (hardened: debug checks + stack protector)",
+      "type": "shell",
+      "command": "cmake -S . -B build-hard -G Ninja -DCMAKE_BUILD_TYPE=Debug -DHARDENING=ON; cmake --build build-hard",
+      "group": "build",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "cppcheck 静态分析",
+      "type": "shell",
+      "command": "cppcheck --enable=warning,style,performance,portability --inconclusive --std=c++17 --suppress=missingIncludeSystem --suppress=unusedFunction -I include src tests",
+      "group": "test",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": {
+        "owner": "cppcheck",
+        "fileLocation": "absolute",
+        "pattern": {
+          "regexp": "^(.+):(\\d+):(\\d+):\\s+(error|warning|style|performance|portability|information):\\s+(.+)$",
+          "file": 1, "line": 2, "column": 3, "severity": 4, "message": 5
+        }
+      }
+    },
+    {
+      "label": "run tests",
+      "type": "shell",
+      "command": "build\\backup_tests.exe",
+      "group": "test",
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "run tests (hardened)",
+      "type": "shell",
+      "command": "build-hard\\backup_tests.exe",
+      "group": "test",
+      "options": { "cwd": "${workspaceFolder}" }
+    }
+  ]
+}

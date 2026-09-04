@@ -1,0 +1,71 @@
+// FileFilter.cpp - 自定义备份筛选实现
+#include "business/FileFilter.h"
+
+#include <algorithm>
+#include <cwctype>
+
+#include "core/Utf.h"
+
+namespace backup {
+
+namespace {
+
+// 取文件名的小写扩展名（含点，如 ".cpp"）；无扩展名返回空。
+std::wstring lowerExtension(const std::wstring& name) {
+    const size_t dot = name.find_last_of(L'.');
+    if (dot == std::wstring::npos || dot == name.size() - 1) return {};
+    std::wstring ext = name.substr(dot);
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
+    return ext;
+}
+
+bool listContains(const std::vector<std::wstring>& list, const std::wstring& value) {
+    return std::any_of(list.begin(), list.end(),
+                       [&value](const std::wstring& item) { return wcsicmpSafe(item, value) == 0; });
+}
+
+}  // namespace
+
+bool FilterRule::isMatch(const FileInfo& info) const {
+    // 扩展名
+    if (!includeExtensions.empty() || !excludeExtensions.empty()) {
+        const std::wstring ext = lowerExtension(info.name);
+        if (!includeExtensions.empty() && !listContains(includeExtensions, ext)) return false;
+        if (listContains(excludeExtensions, ext)) return false;
+    }
+    // 相对路径前缀（include 为空则不限）
+    if (!includeSubPaths.empty()) {
+        const bool matched = std::any_of(
+            includeSubPaths.begin(), includeSubPaths.end(),
+            [&info](const std::wstring& p) { return startsWithNoCase(info.relativePath, p); });
+        if (!matched) return false;
+    }
+    if (std::any_of(excludeSubPaths.begin(), excludeSubPaths.end(),
+                    [&info](const std::wstring& p) { return startsWithNoCase(info.relativePath, p); })) {
+        return false;
+    }
+    // 大小
+    if (minSize != 0 && info.size < minSize) return false;
+    if (maxSize != 0 && info.size > maxSize) return false;
+    // 修改时间
+    if (modifiedAfterEnabled && info.modifiedTime < modifiedAfterUnix) return false;
+    // 空文件
+    if (skipEmptyFiles && info.size == 0) return false;
+    return true;
+}
+
+std::vector<FileInfo> FileFilter::filter(const std::vector<FileInfo>& in, bool keepDirectories) const {
+    std::vector<FileInfo> out;
+    out.reserve(in.size());
+    for (const auto& f : in) {
+        if (f.type == FileType::Directory) {
+            if (keepDirectories) out.push_back(f);
+            continue;
+        }
+        if (rule_.isMatch(f)) out.push_back(f);
+    }
+    return out;
+}
+
+}  // namespace backup
