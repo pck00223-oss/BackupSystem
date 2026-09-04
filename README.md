@@ -101,8 +101,13 @@ build\backupapp.exe backup --source D:\MyData --target D:\Backup --type incremen
 # 注意：改小 --keep-snapshots 或改成 0 不会主动删除已有快照，下次备份后按新值清理
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full --keep-snapshots 5
 
-# AES-256 加密备份（自实现 AES，无第三方依赖；data/ 中存储 IV+密文，Manifest 记录原始 Hash/大小）
+# AES-256 加密备份（自实现 AES，无第三方依赖；data/ 中存储 IV+密文，Manifest 记录原始 Hash/大小 + 密文 Hash/大小）
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full --encrypt aes256 --password mysecret
+# 兼容性说明：
+#   1. commit 3f93cb9 之前生成的加密备份 Manifest 没有 cipher_size/cipher_hash 字段，
+#      用新版本 verify 会报损坏；解决方法：用新版本做一次全量备份重建仓库。
+#   2. verify --repair 对加密文件不生效（只报告损坏），因为无法从明文源文件直接重建密文；
+#      密文损坏时需重新备份该文件（修改源文件触发增量，或全量重建）。
 
 # 自定义筛选：只备份 .cpp/.h，最近 30 天修改，大于 1KB
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --include-ext .cpp,.h
