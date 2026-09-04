@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cwctype>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -49,13 +50,24 @@ std::vector<std::wstring> splitExtList(const std::wstring& v) {
     std::wstring cur;
     for (wchar_t ch : v) {
         if (ch == L',') {
-            if (!cur.empty()) out.push_back(cur);
+            if (!cur.empty()) {
+                // 统一转小写并补点号，与 ConfigLoader 行为一致
+                std::transform(cur.begin(), cur.end(), cur.begin(),
+                               [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+                if (cur[0] != L'.') cur = L"." + cur;
+                out.push_back(cur);
+            }
             cur.clear();
         } else {
             cur.push_back(ch);
         }
     }
-    if (!cur.empty()) out.push_back(cur);
+    if (!cur.empty()) {
+        std::transform(cur.begin(), cur.end(), cur.begin(),
+                       [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+        if (cur[0] != L'.') cur = L"." + cur;
+        out.push_back(cur);
+    }
     return out;
 }
 

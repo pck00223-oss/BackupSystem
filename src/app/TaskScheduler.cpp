@@ -33,19 +33,31 @@ void TaskScheduler::start() {
 
 void TaskScheduler::stop() {
     running_.store(false);
+    cancelFlag_.store(true);  // 取消正在执行的备份
     cv_.notify_all();
     if (thread_.joinable()) thread_.join();
 }
 
 void TaskScheduler::runNow(const std::wstring& name) {
-    std::lock_guard<std::mutex> lk(mu_);
-    const auto it = std::find_if(tasks_.begin(), tasks_.end(),
-                                 [&name](const ScheduledTask& t) { return t.name == name; });
-    if (it != tasks_.end()) execute(*it);
+    // 先在锁内找到任务并复制，释放锁后再执行，避免持锁阻塞其他调度操作
+    ScheduledTask task;
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        const auto it = std::find_if(tasks_.begin(), tasks_.end(),
+                                     [&name](const ScheduledTask& t) { return t.name == name; });
+        if (it != tasks_.end()) {
+            task = *it;
+            found = true;
+        }
+    }
+    if (found) execute(task);
 }
 
 void TaskScheduler::execute(const ScheduledTask& task) {
-    const BackupResult res = BackupManager::run(task.config);
+    BackupManager::Options opts;
+    opts.cancelCheck = [this]() { return cancelFlag_.load(); };
+    const BackupResult res = BackupManager::run(task.config, opts);
     if (callback_) callback_(task.name, res);
 }
 

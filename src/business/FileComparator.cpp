@@ -28,9 +28,8 @@ std::vector<ChangeRecord> FileComparator::compare(const std::vector<FileInfo>& c
 
         const auto it = prevMap.find(fi.relativePath);
         if (it == prevMap.end()) {
-            // 无历史记录 -> 新文件（目录不视为新增）
-            rec.change = (fi.type == FileType::Directory) ? FileChangeType::Unchanged
-                                                          : FileChangeType::Added;
+            // 无历史记录 -> 新增（目录也标记 Added，进入新 Manifest 以保留空目录结构）
+            rec.change = FileChangeType::Added;
         } else {
             const Manifest::Entry& old = *it->second;
             if (fi.type == FileType::Directory) {

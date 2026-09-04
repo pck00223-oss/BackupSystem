@@ -28,16 +28,13 @@ std::wstring utf8ToWide(const std::string& s) {
 }
 
 int wcsicmpSafe(const std::wstring& a, const std::wstring& b) {
-    const size_t n = a.size() < b.size() ? a.size() : b.size();
-    for (size_t i = 0; i < n; ++i) {
-        const wchar_t ca = static_cast<wchar_t>(std::towlower(a[i]));
-        const wchar_t cb = static_cast<wchar_t>(std::towlower(b[i]));
-        if (ca < cb) return -1;
-        if (ca > cb) return 1;
-    }
-    if (a.size() < b.size()) return -1;
-    if (a.size() > b.size()) return 1;
-    return 0;
+    // 使用 CompareStringOrdinal 做大小写不敏感比较，对非 ASCII 字符（如中文、德语变音）可靠。
+    // 返回值：CSTR_LESS_THAN=1, CSTR_EQUAL=2, CSTR_GREATER_THAN=3
+    const int r = ::CompareStringOrdinal(a.c_str(), static_cast<int>(a.size()),
+                                          b.c_str(), static_cast<int>(b.size()), TRUE);
+    if (r == CSTR_EQUAL) return 0;
+    if (r == CSTR_LESS_THAN) return -1;
+    return 1;
 }
 
 bool startsWithNoCase(const std::wstring& s, const std::wstring& prefix) {

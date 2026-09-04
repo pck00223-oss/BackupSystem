@@ -1,6 +1,8 @@
 // Manifest.cpp - 备份清单实现
 #include "business/Manifest.h"
 
+#include <windows.h>
+
 #include <fstream>
 #include <sstream>
 
@@ -22,7 +24,12 @@ const Manifest::Entry* Manifest::find(const std::wstring& relativePath) const {
 }
 
 bool Manifest::saveToFile(const std::wstring& path, std::string* err) const {
-    std::ofstream ofs(path.c_str(), std::ios::binary | std::ios::trunc);
+    // 原子写入：先写同目录临时文件，成功后 MoveFileEx 替换原文件，
+    // 避免写入中途断电/崩溃导致原 Manifest 被截断损坏。
+    const std::wstring tmp = path + L".tmp";
+    ::DeleteFileW(tmp.c_str());
+
+    std::ofstream ofs(tmp.c_str(), std::ios::binary | std::ios::trunc);
     if (!ofs) {
         if (err) *err = "cannot open manifest for write";
         return false;
@@ -49,6 +56,16 @@ bool Manifest::saveToFile(const std::wstring& path, std::string* err) const {
     ofs.flush();
     if (!ofs) {
         if (err) *err = "write manifest failed";
+        ::DeleteFileW(tmp.c_str());
+        return false;
+    }
+    ofs.close();
+
+    // 原子替换：同卷 MoveFileEx 只更新目录项，不会留下中间状态
+    if (!::MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        const DWORD e = ::GetLastError();
+        if (err) *err = "atomic replace failed (error " + std::to_string(e) + ")";
+        ::DeleteFileW(tmp.c_str());
         return false;
     }
     return true;

@@ -126,7 +126,8 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     // ---- 3. 筛选 ----
     FileFilter filter;
     filter.setRule(config.filter);
-    std::vector<FileInfo> files = filter.filter(scanned, /*keepDirectories=*/false);
+    // keepDirectories=true：保留目录条目，使空目录能进入 Manifest 并在恢复时重建
+    std::vector<FileInfo> files = filter.filter(scanned, /*keepDirectories=*/true);
 
     // ---- 4. 加载旧 Manifest，判断是否可增量 ----
     const std::wstring manifestPath = manifestPathOf(config.targetPath);
@@ -156,6 +157,7 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     }
 
     for (const auto& c : changes) {
+        if (c.info.type == FileType::Directory) continue;  // 目录只保留结构，不计入变更统计
         switch (c.change) {
             case FileChangeType::Added: ++res.added; break;
             case FileChangeType::Modified: ++res.modified; break;
@@ -177,6 +179,14 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
 
     for (const auto& c : changes) {
         if (c.change != FileChangeType::Added && c.change != FileChangeType::Modified) continue;
+        // 目录只进入 Manifest，不复制数据
+        if (c.info.type == FileType::Directory) {
+            Manifest::Entry e;
+            e.info = c.info;
+            e.dataPath = c.info.relativePath;
+            newEntries.push_back(std::move(e));
+            continue;
+        }
         if (cancel && cancel()) {
             res.cancelled = true;
             res.errors.push_back(L"备份被用户取消");
@@ -260,6 +270,16 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         log.error(L"BackupManager", L"保存 Manifest 失败: " + utf8ToWide(saveErr));
         res.endTime = formatNowWide();
         return res;
+    }
+
+    // 增量备份：清理 data/ 里已删除文件的旧数据，避免长期占空间
+    if (incremental) {
+        for (const auto& c : changes) {
+            if (c.change != FileChangeType::Deleted) continue;
+            if (c.info.type != FileType::File) continue;
+            const std::wstring oldData = dataDir + L"\\" + c.info.relativePath;
+            FileSystem::deleteFile(oldData);
+        }
     }
 
     // ---- 9. 历史记录 ----

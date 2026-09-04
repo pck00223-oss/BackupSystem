@@ -47,23 +47,35 @@ bool isDriveLetterPrefix(const std::wstring& p) {
     return p.size() == 2 || (p.size() == 3 && (p[2] == L'\\' || p[2] == L'/'));
 }
 
+// 长路径支持：超过 240 字符时加 \\?\ 前缀，绕过 Windows MAX_PATH(260) 限制。
+// 仅对绝对路径（盘符开头）生效；已带前缀的不重复添加。
+std::wstring toLongPath(const std::wstring& path) {
+    if (path.size() < 240) return path;
+    if (path.size() >= 4 && path.compare(0, 4, L"\\\\?\\") == 0) return path;
+    if (path.size() >= 2 && path[1] == L':') {
+        return L"\\\\?\\" + path;
+    }
+    return path;
+}
+
 }  // namespace
 
 bool FileSystem::exists(const std::wstring& path) {
     if (path.empty()) return false;
-    const DWORD attrs = ::GetFileAttributesW(path.c_str());
+    const DWORD attrs = ::GetFileAttributesW(toLongPath(path).c_str());
     return attrs != INVALID_FILE_ATTRIBUTES;
 }
 
 bool FileSystem::isDirectory(const std::wstring& path) {
-    const DWORD attrs = ::GetFileAttributesW(path.c_str());
+    const DWORD attrs = ::GetFileAttributesW(toLongPath(path).c_str());
     if (attrs == INVALID_FILE_ATTRIBUTES) return false;
     return (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
 bool FileSystem::createDirectories(const std::wstring& path) {
     if (path.empty()) return false;
-    const DWORD attrs = ::GetFileAttributesW(path.c_str());
+    const std::wstring lp = toLongPath(path);
+    const DWORD attrs = ::GetFileAttributesW(lp.c_str());
     if (attrs != INVALID_FILE_ATTRIBUTES) {
         return (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
     }
@@ -73,10 +85,10 @@ bool FileSystem::createDirectories(const std::wstring& path) {
     if (!parent.empty() && !isDriveLetterPrefix(parent)) {
         if (!createDirectories(parent)) return false;
     }
-    if (::CreateDirectoryW(path.c_str(), nullptr)) return true;
+    if (::CreateDirectoryW(lp.c_str(), nullptr)) return true;
     const DWORD err = ::GetLastError();
     if (err == ERROR_ALREADY_EXISTS) {
-        const DWORD a = ::GetFileAttributesW(path.c_str());
+        const DWORD a = ::GetFileAttributesW(lp.c_str());
         return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY) != 0;
     }
     return false;
@@ -85,7 +97,7 @@ bool FileSystem::createDirectories(const std::wstring& path) {
 bool FileSystem::listDirectory(const std::wstring& dirPath,
                                std::vector<std::pair<std::wstring, FileType>>& out) {
     out.clear();
-    const std::wstring pattern = dirPath + L"\\*";
+    const std::wstring pattern = toLongPath(dirPath) + L"\\*";
     WIN32_FIND_DATAW fd;
     HANDLE h = ::FindFirstFileW(pattern.c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) return false;
@@ -102,8 +114,9 @@ bool FileSystem::listDirectory(const std::wstring& dirPath,
 }
 
 bool FileSystem::getFileInfo(const std::wstring& path, FileInfo& out) {
+    const std::wstring lp = toLongPath(path);
     WIN32_FIND_DATAW fd;
-    HANDLE h = ::FindFirstFileW(path.c_str(), &fd);
+    HANDLE h = ::FindFirstFileW(lp.c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) return false;
     ::FindClose(h);
 
@@ -123,7 +136,7 @@ bool FileSystem::getFileInfo(const std::wstring& path, FileInfo& out) {
 }
 
 FileHandle FileSystem::openRead(const std::wstring& path, std::string* err) {
-    HANDLE h = ::CreateFileW(path.c_str(), GENERIC_READ,
+    HANDLE h = ::CreateFileW(toLongPath(path).c_str(), GENERIC_READ,
                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
@@ -135,7 +148,7 @@ FileHandle FileSystem::openRead(const std::wstring& path, std::string* err) {
 
 FileHandle FileSystem::openWrite(const std::wstring& path, bool overwrite, std::string* err) {
     const DWORD disposition = overwrite ? CREATE_ALWAYS : CREATE_NEW;
-    HANDLE h = ::CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+    HANDLE h = ::CreateFileW(toLongPath(path).c_str(), GENERIC_WRITE, FILE_SHARE_READ,
                              nullptr, disposition, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         if (err) *err = std::string("open for write failed: ") + wideToUtf8(errorString(::GetLastError()));
@@ -163,7 +176,7 @@ bool FileSystem::write(HANDLE h, const void* buf, DWORD n, DWORD& writtenCount, 
 }
 
 bool FileSystem::setFileTimes(const std::wstring& path, uint64_t createdSec, uint64_t modifiedSec) {
-    HANDLE h = ::CreateFileW(path.c_str(), FILE_WRITE_ATTRIBUTES,
+    HANDLE h = ::CreateFileW(toLongPath(path).c_str(), FILE_WRITE_ATTRIBUTES,
                              FILE_SHARE_READ | FILE_SHARE_WRITE,
                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) return false;
@@ -176,7 +189,7 @@ bool FileSystem::setFileTimes(const std::wstring& path, uint64_t createdSec, uin
 }
 
 bool FileSystem::deleteFile(const std::wstring& path) {
-    return ::DeleteFileW(path.c_str()) != FALSE;
+    return ::DeleteFileW(toLongPath(path).c_str()) != FALSE;
 }
 
 uint64_t FileSystem::nowSeconds() {

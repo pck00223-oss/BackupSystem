@@ -52,6 +52,7 @@ private:
     std::mutex mu_;
     std::condition_variable cv_;
     std::atomic<bool> running_{false};
+    std::atomic<bool> cancelFlag_{false};  // stop() 时置位，取消正在执行的备份
     std::thread thread_;
     TaskCallback callback_;
 };

@@ -48,7 +48,12 @@ RestoreResult RestoreManager::run(const RestoreConfig& config,
                  manifest.meta.sourcePath);
 
     for (const auto& e : manifest.entries) {
-        if (e.info.type != FileType::File) continue;  // 目录结构按文件相对路径创建
+        // 目录条目：重建空目录结构
+        if (e.info.type == FileType::Directory) {
+            FileSystem::createDirectories(config.restorePath + L"\\" + e.info.relativePath);
+            continue;
+        }
+        if (e.info.type != FileType::File) continue;  // 跳过 Symlink 等特殊类型
         if (cancel && cancel()) {
             res.cancelled = true;
             res.errors.push_back(L"恢复被用户取消");
