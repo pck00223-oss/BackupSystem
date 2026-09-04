@@ -1,7 +1,8 @@
 // BackupLock.h - 备份目录单一实例锁
 // 职责：防止计划任务触发的备份与手动备份同时写同一 target 目录。
 //       锁文件位于 <target>/.backup.lock，内容为持有进程 PID。
-//       崩溃残留的锁文件在下次获取时自动检测（PID 已退出则清理）。
+//       获取用 CreateFileW(CREATE_NEW) 原子创建；崩溃残留的锁文件
+//       在下次获取时自动检测（PID 已退出则清理后重试）。
 #pragma once
 
 #include <string>

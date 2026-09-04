@@ -9,6 +9,7 @@
 #include "business/RestoreManager.h"
 #include "business/VerifyManager.h"
 #include "app/TaskScheduler.h"
+#include "core/BackupLock.h"
 #include "core/HashCalculator.h"
 #include "core/TimeUtil.h"
 #include "engine/FileScanner.h"
@@ -17,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <fstream>
+#include <mutex>
 #include <thread>
 
 namespace {
@@ -715,6 +717,41 @@ TEST(BackupLock_ConcurrentBackup_Rejected) {
 
     // 清理锁文件
     FileSystem::deleteFile(env.target + L"\\.backup.lock");
+}
+
+// 回归测试：锁获取必须是原子的，两个线程同时获取只能有一个成功
+TEST(BackupLock_AtomicAcquire_SingleWinner) {
+    TestEnv env;
+
+    std::atomic<int> winners{0};
+    std::mutex mu;
+    std::vector<std::wstring> acquiredPaths;
+
+    const auto worker = [&]() {
+        std::wstring path;
+        std::string err;
+        if (BackupLock::acquire(env.target, path, err)) {
+            winners.fetch_add(1);
+            std::lock_guard<std::mutex> lk(mu);
+            acquiredPaths.push_back(path);
+        }
+    };
+
+    std::thread t1(worker);
+    std::thread t2(worker);
+    t1.join();
+    t2.join();
+
+    // CREATE_NEW 保证同一时刻只有一个线程能创建锁文件
+    CHECK_EQ(winners.load(), 1);
+    CHECK(FileSystem::exists(env.target + L"\\.backup.lock"));
+
+    // 释放获胜者持有的锁并清理
+    {
+        std::lock_guard<std::mutex> lk(mu);
+        for (const auto& p : acquiredPaths) BackupLock::release(p);
+    }
+    CHECK(!FileSystem::exists(env.target + L"\\.backup.lock"));
 }
 
 // 回归测试：用户的正常 .baktmp.old 文件不被误删
