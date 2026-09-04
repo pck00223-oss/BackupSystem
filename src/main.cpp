@@ -171,6 +171,26 @@ int cmdBackup(const std::vector<std::wstring>& args) {
     // 常驻定时模式（--schedule）：程序一直开着才会触发。
     // 长期自用推荐用 schedule --register 注册 Windows 计划任务。
     if (!config.scheduleTime.empty()) {
+        // 校验时间格式 HH:MM（00:00-23:59），非法则报错退出
+        const std::wstring& st = config.scheduleTime;
+        bool timeValid = (st.size() == 5 && st[2] == L':');
+        if (timeValid) {
+            for (size_t i = 0; i < st.size(); ++i) {
+                if (i == 2) continue;
+                if (st[i] < L'0' || st[i] > L'9') { timeValid = false; break; }
+            }
+        }
+        if (timeValid) {
+            const int h = std::stoi(st.substr(0, 2));
+            const int m = std::stoi(st.substr(3, 2));
+            if (h < 0 || h > 23 || m < 0 || m > 59) timeValid = false;
+        }
+        if (!timeValid) {
+            std::cout << "错误：--schedule 时间格式应为 HH:MM（00:00-23:59），当前: "
+                      << wideToUtf8(config.scheduleTime) << "\n";
+            return 1;
+        }
+
         TaskScheduler scheduler;
         scheduler.setCallback([](const std::wstring& name, const BackupResult& r) {
             std::cout << "\n[定时任务 " << wideToUtf8(name) << " 完成]\n";
@@ -300,14 +320,52 @@ int cmdSchedule(const std::vector<std::wstring>& args) {
             return 1;
         }
 
+        // 校验时间格式 HH:MM（00:00-23:59）
+        if (time.size() != 5 || time[2] != L':') {
+            std::cout << "错误：--time 格式应为 HH:MM（如 20:00），当前: " << wideToUtf8(time) << "\n";
+            return 1;
+        }
+        for (size_t i = 0; i < time.size(); ++i) {
+            if (i == 2) continue;
+            if (time[i] < L'0' || time[i] > L'9') {
+                std::cout << "错误：--time 格式应为 HH:MM（如 20:00），当前: " << wideToUtf8(time) << "\n";
+                return 1;
+            }
+        }
+        {
+            const int h = std::stoi(time.substr(0, 2));
+            const int m = std::stoi(time.substr(3, 2));
+            if (h < 0 || h > 23 || m < 0 || m > 59) {
+                std::cout << "错误：--time 范围应为 00:00-23:59，当前: " << wideToUtf8(time) << "\n";
+                return 1;
+            }
+        }
+
+        // 校验任务名：只允许字母、数字、中文、下划线、连字符、空格、点号
+        for (wchar_t c : taskName) {
+            const bool ok = (c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') ||
+                            (c >= L'0' && c <= L'9') || c == L'_' || c == L'-' ||
+                            c == L' ' || c == L'.' || c > 0x7F;
+            if (!ok) {
+                std::cout << "错误：任务名包含非法字符: " << wideToUtf8(taskName) << "\n";
+                return 1;
+            }
+        }
+
         const std::wstring type = getArg(args, L"--type", L"full");
         const std::wstring modeArg = (type == L"inc" || type == L"incremental") ? L"incremental" : L"full";
 
         // 构造任务执行的命令行参数：backupapp backup --source <src> --target <tgt> --type <mode>
-        // 路径含空格时用引号包裹
+        // 路径含空格或引号时用引号包裹（内部引号转义）
         const auto quote = [](const std::wstring& s) -> std::wstring {
-            if (s.find(L' ') == std::wstring::npos) return s;
-            return L"\"" + s + L"\"";
+            if (s.find(L' ') == std::wstring::npos && s.find(L'"') == std::wstring::npos) return s;
+            std::wstring escaped;
+            escaped.reserve(s.size() + 4);
+            for (wchar_t c : s) {
+                if (c == L'"') escaped += L"\\\"";
+                else escaped += c;
+            }
+            return L"\"" + escaped + L"\"";
         };
         const std::wstring arguments =
             L"backup --source " + quote(src) +
@@ -323,6 +381,7 @@ int cmdSchedule(const std::vector<std::wstring>& args) {
             std::cout << "  参数   : " << wideToUtf8(arguments) << "\n";
             std::cout << "  时间   : 每天 " << wideToUtf8(time) << "\n";
             std::cout << "到点将自动执行备份，完成后退出，无需程序常驻。\n";
+            std::cout << "注意: 任务使用交互式登录令牌，需保持登录或锁屏状态；注销后不运行。\n";
             std::cout << "查看状态: backupapp schedule --status\n";
             std::cout << "卸载任务: backupapp schedule --unregister\n";
             return 0;
