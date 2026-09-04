@@ -108,6 +108,7 @@ build\backupapp.exe verify --backup D:\Backup
 # 需要以管理员身份运行
 build\backupapp.exe schedule --register --time 20:00 --source D:\MyData --target D:\Backup --type full
 
+# 注意: 任务使用交互式登录令牌, 用户登录/锁屏状态下到点触发; 注销后已排队任务可能执行一次, 未登录时不会主动启动新任务
 # 查看计划任务状态 / 卸载
 build\backupapp.exe schedule --status
 build\backupapp.exe schedule --unregister

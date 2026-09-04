@@ -355,7 +355,7 @@ int cmdSchedule(const std::vector<std::wstring>& args) {
             std::cout << "  参数   : " << wideToUtf8(arguments) << "\n";
             std::cout << "  时间   : 每天 " << wideToUtf8(time) << "\n";
             std::cout << "到点将自动执行备份，完成后退出，无需程序常驻。\n";
-            std::cout << "注意: 任务使用交互式登录令牌，需保持登录或锁屏状态；注销后不运行。\n";
+            std::cout << "注意: 任务使用交互式登录令牌，用户登录/锁屏状态下到点触发；注销后已排队任务可能执行一次，未登录时不会主动启动新任务。\n";
             std::cout << "查看状态: backupapp schedule --status\n";
             std::cout << "卸载任务: backupapp schedule --unregister\n";
             return 0;
