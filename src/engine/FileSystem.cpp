@@ -51,8 +51,9 @@ bool isDriveLetterPrefix(const std::wstring& p) {
 // 仅对绝对路径（盘符开头）生效；已带前缀的不重复添加。
 std::wstring toLongPath(const std::wstring& path) {
     if (path.size() < 240) return path;
-    if (path.size() >= 4 && path.compare(0, 4, L"\\\\?\\") == 0) return path;
-    if (path.size() >= 2 && path[1] == L':') {
+    // 走到此处 path.size() >= 240，无需再检查长度
+    if (path.compare(0, 4, L"\\\\?\\") == 0) return path;
+    if (path[1] == L':') {
         return L"\\\\?\\" + path;
     }
     return path;

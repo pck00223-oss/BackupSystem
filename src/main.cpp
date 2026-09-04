@@ -16,6 +16,7 @@
 #include "app/TaskScheduler.h"
 #include "business/BackupManager.h"
 #include "business/RestoreManager.h"
+#include "business/VerifyManager.h"
 #include "core/Logger.h"
 #include "core/TimeUtil.h"
 #include "core/Utf.h"
@@ -82,6 +83,7 @@ void printHelp() {
         "      --schedule HH:MM          设置每天定时备份\n"
         "      --config <file>           配置文件（默认 config/default.conf）\n"
         "  backupapp restore --backup <dir> --to <dir> [--overwrite]\n"
+        "  backupapp verify  --backup <dir>\n"
         "  backupapp history --target <dir>\n"
         "  backupapp help\n";
 }
@@ -226,6 +228,29 @@ int cmdHistory(const std::vector<std::wstring>& args) {
     return 0;
 }
 
+int cmdVerify(const std::vector<std::wstring>& args) {
+    const std::wstring backupRoot = getArg(args, L"--backup");
+    if (backupRoot.empty()) {
+        std::cout << "错误：verify 需要 --backup <备份目录>\n";
+        return 1;
+    }
+
+    std::cout << "========== 完整性校验 ==========\n";
+    std::cout << "备份目录 : " << wideToUtf8(backupRoot) << "\n";
+
+    const VerifyResult res = VerifyManager::run(backupRoot);
+
+    std::cout << "文件总数 : " << res.total << "\n";
+    std::cout << "通过     : " << res.passed << "\n";
+    std::cout << "缺失     : " << res.missing << "\n";
+    std::cout << "损坏     : " << res.corrupted << "\n";
+    std::cout << "跳过     : " << res.skipped << " (目录/符号链接)\n";
+    std::cout << "状态     : " << (res.success ? "完整" : "不完整") << "\n";
+    for (const auto& e : res.errors) std::cout << "  " << wideToUtf8(e) << "\n";
+    std::cout << "================================\n";
+    return res.success ? 0 : 1;
+}
+
 }  // namespace
 
 int main() {
@@ -247,6 +272,7 @@ int main() {
 
     if (args[0] == L"backup") return cmdBackup(args);
     if (args[0] == L"restore") return cmdRestore(args);
+    if (args[0] == L"verify") return cmdVerify(args);
     if (args[0] == L"history") return cmdHistory(args);
 
     std::cout << "未知命令: " << wideToUtf8(args[0]) << "\n";

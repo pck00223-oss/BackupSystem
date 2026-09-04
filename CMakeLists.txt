@@ -95,6 +95,7 @@ add_library(backup_core STATIC
     src/business/FileFilter.cpp
     src/business/Manifest.cpp
     src/business/RestoreManager.cpp
+    src/business/VerifyManager.cpp
     src/app/BackupTask.cpp
     src/app/ConfigLoader.cpp
     src/app/TaskScheduler.cpp

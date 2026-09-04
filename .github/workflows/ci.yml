@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2 (MinGW-w64 UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-cppcheck
+
+      - name: Configure (strict warnings)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSTRICT_WARNINGS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run tests
+        run: ./build/backup_tests.exe
+
+      - name: cppcheck static analysis
+        run: cppcheck --enable=warning,style,performance --error-exitcode=1 --inline-suppr -I include src/
