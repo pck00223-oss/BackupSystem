@@ -26,12 +26,17 @@ public:
         std::string backupType;     // "full" / "incremental"
         uint64_t fileCount = 0;
         std::string encryption;      // "none" / "aes256"
+        std::string passwordVerifier; // 加密时的密码验证标记（SHA256(password+固定盐)），用于增量时检测密码切换
     };
 
     // 文件条目 = FileInfo + 备份内的数据存储相对路径。
     struct Entry {
         FileInfo info;
         std::wstring dataPath;  // 数据在备份中的相对存储路径（单镜像方案中默认等于相对路径）
+        // 加密时：data/ 中实际存储的是密文，这里记录密文大小和 Hash，供 verify 校验。
+        // 未加密时这两个字段为空，verify 用 info.size/info.hash 校验。
+        uint64_t cipherSize = 0;
+        std::string cipherHash;
     };
 
     Manifest() = default;

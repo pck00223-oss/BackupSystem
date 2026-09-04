@@ -30,10 +30,17 @@ bool decryptAndWriteFile(const std::wstring& src, const std::wstring& dst,
     std::vector<uint8_t> plain = aes.decrypt(cipher.data(), cipher.size(), &decryptOk);
     if (!decryptOk) { err = "decryption failed (wrong password or corrupted data)"; return false; }
 
-    const std::wstring tmp = dst + L".baktmp.dec";
-    ::DeleteFileW(tmp.c_str());
+    // 用 GetTempFileNameW 生成唯一临时文件名，避免与合法文件撞名，再原子替换
+    const size_t pos = dst.find_last_of(L"\\/");
+    const std::wstring dir = (pos == std::wstring::npos) ? L"." : dst.substr(0, pos);
+    wchar_t tmpPath[MAX_PATH];
+    if (::GetTempFileNameW(dir.c_str(), L"dec", 0, tmpPath) == 0) {
+        err = "cannot create temp file (error " + std::to_string(::GetLastError()) + ")";
+        return false;
+    }
+    const std::wstring tmp(tmpPath);
     std::ofstream ofs(tmp.c_str(), std::ios::binary | std::ios::trunc);
-    if (!ofs) { err = "cannot open temp file for write"; return false; }
+    if (!ofs) { err = "cannot open temp file for write"; ::DeleteFileW(tmp.c_str()); return false; }
     ofs.write(reinterpret_cast<const char*>(plain.data()), static_cast<std::streamsize>(plain.size()));
     ofs.flush();
     if (!ofs) { ofs.close(); ::DeleteFileW(tmp.c_str()); err = "write decrypted file failed"; return false; }

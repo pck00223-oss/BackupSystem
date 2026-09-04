@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include <windows.h>
+#include <bcrypt.h>
 
 #include "core/HashCalculator.h"
 
@@ -80,6 +81,16 @@ AesEncryptor::AesEncryptor(const std::string& password) {
         std::memset(key_, 0, KEY_SIZE);
         const size_t copyLen = password.size() < KEY_SIZE ? password.size() : KEY_SIZE;
         std::memcpy(key_, password.data(), copyLen);
+    }
+    keyExpansion();
+}
+
+AesEncryptor::AesEncryptor(const uint8_t* rawKey, size_t keyLen) {
+    // 测试用：直接使用 32 字节原始密钥，不经过 SHA-256 派生
+    std::memset(key_, 0, KEY_SIZE);
+    const size_t copyLen = keyLen < KEY_SIZE ? keyLen : KEY_SIZE;
+    if (rawKey && copyLen > 0) {
+        std::memcpy(key_, rawKey, copyLen);
     }
     keyExpansion();
 }
@@ -207,19 +218,29 @@ void AesEncryptor::decryptBlock(const uint8_t in[16], uint8_t out[16]) const {
 }
 
 void AesEncryptor::generateIV(uint8_t iv[16]) {
-    // 用系统时间 + 进程 ID 生成伪随机 IV（够用，非密码学安全）
-    const uint64_t t = static_cast<uint64_t>(::GetTickCount64());
-    const uint32_t pid = ::GetCurrentProcessId();
-    std::memset(iv, 0, 16);
-    std::memcpy(iv, &t, sizeof(t));
-    std::memcpy(iv + 8, &pid, sizeof(pid));
-    // 再混入一些熵
-    for (int i = 0; i < 16; ++i) {
-        iv[i] ^= static_cast<uint8_t>(::GetTickCount() & 0xFF);
+    // 用 Windows BCryptGenRandom 生成密码学安全随机 IV
+    // BCRYPT_USE_SYSTEM_PREFERRED_RNG 标志使用系统首选 RNG，无需打开算法提供者句柄
+    const NTSTATUS status = BCryptGenRandom(
+        nullptr, iv, 16, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    if (status < 0) {
+        // 极端兜底：BCryptGenRandom 失败时用时间+PID 混合（不应发生）
+        const uint64_t t = static_cast<uint64_t>(::GetTickCount64());
+        const uint32_t pid = ::GetCurrentProcessId();
+        std::memset(iv, 0, 16);
+        std::memcpy(iv, &t, sizeof(t));
+        std::memcpy(iv + 8, &pid, sizeof(pid));
     }
 }
 
 std::vector<uint8_t> AesEncryptor::encrypt(const uint8_t* plaintext, size_t len) const {
+    if (!plaintext && len > 0) return {};
+    // 生成随机 IV，然后调用指定 IV 的加密
+    uint8_t iv[BLOCK_SIZE];
+    generateIV(iv);
+    return encryptWithIV(plaintext, len, iv);
+}
+
+std::vector<uint8_t> AesEncryptor::encryptWithIV(const uint8_t* plaintext, size_t len, const uint8_t iv[16]) const {
     if (!plaintext && len > 0) return {};
     // 空文件也允许加密：PKCS7 填充会填充一整个块（16 字节，值为 16）。
 
@@ -231,11 +252,7 @@ std::vector<uint8_t> AesEncryptor::encrypt(const uint8_t* plaintext, size_t len)
     }
     for (size_t i = len; i < padded.size(); ++i) padded[i] = static_cast<uint8_t>(padLen);
 
-    // 生成 IV
-    uint8_t iv[BLOCK_SIZE];
-    generateIV(iv);
-
-    // CBC 加密
+    // CBC 加密（使用调用方指定的 IV）
     std::vector<uint8_t> result(BLOCK_SIZE + padded.size());
     std::memcpy(result.data(), iv, BLOCK_SIZE);
 

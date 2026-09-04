@@ -11,6 +11,7 @@
 #include "business/VerifyManager.h"
 #include "app/TaskScheduler.h"
 #include "core/BackupLock.h"
+#include "core/AesEncryptor.h"
 #include "core/HashCalculator.h"
 #include "core/TimeUtil.h"
 #include "engine/FileScanner.h"
@@ -888,6 +889,117 @@ TEST(Encryption_BackupRestore_Aes256) {
     CHECK(testutil::readFile(rcfg.restorePath + L"\\secret.txt") == "this is secret data");
     CHECK(testutil::readFile(rcfg.restorePath + L"\\public.txt") == "public data");
     CHECK(testutil::readFile(rcfg.restorePath + L"\\empty.txt") == "");
+
+    testutil::removeAll(src);
+    testutil::removeAll(tgt);
+}
+
+// NIST AES-256 标准向量测试（FIPS-197 / SP 800-38A）
+// 验证自实现 AES 的正确性，而不仅是"自己解自己"。
+// 用全零 IV 时，CBC 第一块 = ECB 加密结果。
+TEST(Aes_NistVector_Aes256_EcbBlock) {
+    // NIST AES-256 ECB 测试向量
+    const uint8_t key[32] = {
+        0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,
+        0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f
+    };
+    const uint8_t plaintext[16] = {
+        0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xee,0xff
+    };
+    // NIST FIPS-197 Appendix B AES-256 ECB 测试向量（与 BCrypt 官方实现交叉验证）
+    const uint8_t expectedCipher[16] = {
+        0x8e,0xa2,0xb7,0xca,0x51,0x67,0x45,0xbf,0xea,0xfc,0x49,0x90,0x4b,0x49,0x60,0x89
+    };
+    const uint8_t zeroIv[16] = {0};
+
+    AesEncryptor aes(key, 32);
+    // 16 字节明文会被 PKCS7 填充到 32 字节，输出 IV(16) + 密文(32) = 48 字节
+    std::vector<uint8_t> result = aes.encryptWithIV(plaintext, 16, zeroIv);
+    CHECK(result.size() == 48);
+    // 前 16 字节是 IV（全零）
+    for (size_t i = 0; i < 16; ++i) CHECK(result[i] == 0);
+    // 第一个密文块（偏移 16-31）应等于 ECB 加密结果
+    for (size_t i = 0; i < 16; ++i) CHECK(result[16 + i] == expectedCipher[i]);
+
+    // 解密应恢复明文
+    bool decryptOk = false;
+    std::vector<uint8_t> decrypted = aes.decrypt(result.data(), result.size(), &decryptOk);
+    CHECK(decryptOk);
+    CHECK(decrypted.size() == 16);
+    for (size_t i = 0; i < 16; ++i) CHECK(decrypted[i] == plaintext[i]);
+}
+
+// 加密备份后 verify 应通过（用密文大小/Hash 校验，不误报损坏）
+TEST(Encryption_VerifyAfterEncryptedBackup_Passes) {
+    const std::wstring src = testutil::makeTempDir(L"enc_verify_src");
+    const std::wstring tgt = testutil::makeTempDir(L"enc_verify_tgt");
+    testutil::writeFile(src + L"secret.txt", "this is secret data");
+    testutil::writeFile(src + L"empty.txt", "");
+
+    BackupConfig cfg;
+    cfg.sourcePath = src;
+    cfg.targetPath = tgt;
+    cfg.mode = BackupMode::Full;
+    cfg.encryption = "aes256";
+    cfg.password = "verifytest";
+
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+    CHECK(r1.backedUp == 2);
+
+    // verify 应通过（密文大小/Hash 与 Manifest 中 cipher_size/cipher_hash 一致）
+    VerifyOptions vopts;
+    VerifyResult vr = VerifyManager::run(tgt, vopts);
+    CHECK(vr.success);
+    CHECK(vr.total == 2);
+    CHECK(vr.passed == 2);
+    CHECK(vr.corrupted == 0);
+    CHECK(vr.missing == 0);
+
+    testutil::removeAll(src);
+    testutil::removeAll(tgt);
+}
+
+// 换密码增量备份应被拒绝（防止生成混血仓库）
+TEST(Encryption_IncrementWithDifferentPassword_Rejected) {
+    const std::wstring src = testutil::makeTempDir(L"enc_pw_src");
+    const std::wstring tgt = testutil::makeTempDir(L"enc_pw_tgt");
+    testutil::writeFile(src + L"a.txt", "version1");
+
+    // 第一次全量备份，密码 pass1
+    BackupConfig cfg1;
+    cfg1.sourcePath = src;
+    cfg1.targetPath = tgt;
+    cfg1.mode = BackupMode::Full;
+    cfg1.encryption = "aes256";
+    cfg1.password = "pass1";
+    BackupResult r1 = BackupManager::run(cfg1);
+    CHECK(r1.success);
+
+    // 修改文件
+    testutil::writeFile(src + L"a.txt", "version2");
+
+    // 第二次增量备份，换密码 pass2，应被拒绝
+    BackupConfig cfg2;
+    cfg2.sourcePath = src;
+    cfg2.targetPath = tgt;
+    cfg2.mode = BackupMode::Incremental;
+    cfg2.encryption = "aes256";
+    cfg2.password = "pass2";
+    BackupResult r2 = BackupManager::run(cfg2);
+    CHECK(!r2.success);
+    CHECK(!r2.errors.empty());
+
+    // 用相同密码 pass1 增量备份应成功
+    BackupConfig cfg3;
+    cfg3.sourcePath = src;
+    cfg3.targetPath = tgt;
+    cfg3.mode = BackupMode::Incremental;
+    cfg3.encryption = "aes256";
+    cfg3.password = "pass1";
+    BackupResult r3 = BackupManager::run(cfg3);
+    CHECK(r3.success);
+    CHECK(r3.modified == 1);
 
     testutil::removeAll(src);
     testutil::removeAll(tgt);

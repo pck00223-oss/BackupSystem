@@ -65,9 +65,30 @@ inline bool isTempResidual(const std::wstring& name) {
     return false;
 }
 
-// 判断文件名是否是任何崩溃残留（临时文件或旧数据）。
+// 判断文件名是否是加密/解密临时文件残留。
+// GetTempFileNameW 生成的格式：enc[0-9A-Fa-f]{4}.TMP 或 dec[0-9A-Fa-f]{4}.TMP。
+// 这个模式比较特定，不太可能与用户正常文件撞名；且崩溃恢复时还会用 Manifest 白名单二次排除。
+inline bool isCryptoTempResidual(const std::wstring& name) {
+    // 格式：encXXXX.tmp 或 decXXXX.tmp = 3 + 4 + 1 + 3 = 11 字符
+    if (name.size() != 11) return false;
+    const bool isEnc = (name[0] == L'e' && name[1] == L'n' && name[2] == L'c');
+    const bool isDec = (name[0] == L'd' && name[1] == L'e' && name[2] == L'c');
+    if (!isEnc && !isDec) return false;
+    if (name[7] != L'.') return false;
+    const std::wstring ext = name.substr(8);
+    if (ext != L"tmp" && ext != L"TMP") return false;
+    // 中间 4 位必须是十六进制数字
+    for (size_t i = 3; i < 7; ++i) {
+        const wchar_t c = name[i];
+        const bool isHex = (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f') || (c >= L'A' && c <= L'F');
+        if (!isHex) return false;
+    }
+    return true;
+}
+
+// 判断文件名是否是任何崩溃残留（临时文件或旧数据或加密/解密临时文件）。
 inline bool isResidualName(const std::wstring& name) {
-    return !parseOldResidual(name).empty() || isTempResidual(name);
+    return !parseOldResidual(name).empty() || isTempResidual(name) || isCryptoTempResidual(name);
 }
 
 }  // namespace backup

@@ -44,6 +44,9 @@ bool Manifest::saveToFile(const std::wstring& path, std::string* err) const {
     body += "file_count=" + std::to_string(meta.fileCount) + "\n";
     if (!meta.encryption.empty() && meta.encryption != "none") {
         body += "encryption=" + meta.encryption + "\n";
+        if (!meta.passwordVerifier.empty()) {
+            body += "password_verifier=" + meta.passwordVerifier + "\n";
+        }
     }
     for (const auto& e : entries) {
         body += "\n[file]\n";
@@ -54,6 +57,12 @@ bool Manifest::saveToFile(const std::wstring& path, std::string* err) const {
         body += "mtime_100ns=" + std::to_string(e.info.modifiedTime100ns) + "\n";
         body += "hash=" + e.info.hash + "\n";
         body += "data=" + wideToUtf8(e.dataPath) + "\n";
+        if (e.cipherSize > 0) {
+            body += "cipher_size=" + std::to_string(e.cipherSize) + "\n";
+        }
+        if (!e.cipherHash.empty()) {
+            body += "cipher_hash=" + e.cipherHash + "\n";
+        }
     }
     ofs.write(body.data(), static_cast<std::streamsize>(body.size()));
     ofs.flush();
@@ -143,6 +152,7 @@ bool Manifest::loadFromFile(const std::wstring& path, std::string* err) {
             else if (key == "type") meta.backupType = val;
             else if (key == "file_count") meta.fileCount = safeStoull(val, "file_count");
             else if (key == "encryption") meta.encryption = val;
+            else if (key == "password_verifier") meta.passwordVerifier = val;
         } else {
             if (key == "path") cur.info.relativePath = utf8ToWide(val);
             else if (key == "type") cur.info.type = static_cast<FileType>(safeStoi(val, "type"));
@@ -151,6 +161,8 @@ bool Manifest::loadFromFile(const std::wstring& path, std::string* err) {
             else if (key == "mtime_100ns") cur.info.modifiedTime100ns = safeStoull(val, "mtime_100ns");
             else if (key == "hash") { cur.info.hash = val; cur.info.hashed = !val.empty(); }
             else if (key == "data") cur.dataPath = utf8ToWide(val);
+            else if (key == "cipher_size") cur.cipherSize = safeStoull(val, "cipher_size");
+            else if (key == "cipher_hash") cur.cipherHash = val;
         }
     }
     flushEntry();

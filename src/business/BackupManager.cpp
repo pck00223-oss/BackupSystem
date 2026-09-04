@@ -50,11 +50,17 @@ static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
     std::vector<uint8_t> cipher = aes.encrypt(plain.data(), plain.size());
     if (cipher.empty()) { err = "encryption failed"; return false; }
 
-    // 写入目标（先写临时文件再原子替换，避免截断）
-    const std::wstring tmp = dst + L".baktmp.enc";
-    ::DeleteFileW(tmp.c_str());
+    // 写入目标（用 GetTempFileNameW 生成唯一临时文件名，避免与合法文件撞名，再原子替换）
+    const size_t pos = dst.find_last_of(L"\\/");
+    const std::wstring dir = (pos == std::wstring::npos) ? L"." : dst.substr(0, pos);
+    wchar_t tmpPath[MAX_PATH];
+    if (::GetTempFileNameW(dir.c_str(), L"enc", 0, tmpPath) == 0) {
+        err = "cannot create temp file (error " + std::to_string(::GetLastError()) + ")";
+        return false;
+    }
+    const std::wstring tmp(tmpPath);
     std::ofstream ofs(tmp.c_str(), std::ios::binary | std::ios::trunc);
-    if (!ofs) { err = "cannot open temp file for write"; return false; }
+    if (!ofs) { err = "cannot open temp file for write"; ::DeleteFileW(tmp.c_str()); return false; }
     ofs.write(reinterpret_cast<const char*>(cipher.data()), static_cast<std::streamsize>(cipher.size()));
     ofs.flush();
     if (!ofs) { ofs.close(); ::DeleteFileW(tmp.c_str()); err = "write encrypted file failed"; return false; }
@@ -66,6 +72,13 @@ static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
         return false;
     }
     return true;
+}
+
+// 计算密码验证标记：SHA256(password + 固定盐)，用于增量时检测密码切换。
+// 注意：这不是密码学安全的密码存储，仅用于检测密码是否改变；后续可升级为 PBKDF2+随机盐。
+static std::string computePasswordVerifier(const std::string& password) {
+    const std::string salted = password + "|BackupSystem_AES_Password_Verifier_v1";
+    return HashCalculator::bufferSha256(salted.data(), salted.size());
 }
 
 // 从当前 data/ 和 manifest.txt 创建快照。
@@ -259,6 +272,37 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     const bool hasPrevious = previous.loadFromFile(manifestPath, nullptr);
     const bool incremental = (config.mode == BackupMode::Incremental) && hasPrevious;
 
+    // ---- 4b. 增量前校验加密方式+密码一致，防止生成"混血"仓库 ----
+    // 场景：第一次加密备份，第二次不加密/换密码 → 未变化文件用旧加密，变化文件用新加密，恢复时部分解不开。
+    if (incremental) {
+        const bool prevEncrypted = (!previous.meta.encryption.empty() && previous.meta.encryption != "none");
+        const bool curEncrypted = (config.encryption == "aes256") && !config.password.empty();
+        if (prevEncrypted != curEncrypted) {
+            res.success = false;
+            const std::wstring msg = std::wstring(L"增量备份失败：加密方式不一致。上一份备份") +
+                (prevEncrypted ? L"已加密" : L"未加密") + L"，本次配置" +
+                (curEncrypted ? L"加密" : L"未加密") +
+                L"。请改用全量备份重建仓库，或保持与上一份相同的加密方式和密码。";
+            res.errors.push_back(msg);
+            log.error(L"BackupManager", L"增量备份失败：加密方式不一致，需全量重建");
+            appendHistory(config.targetPath, res);
+            res.endTime = formatNowWide();
+            return res;
+        }
+        // 执行到此处说明 prevEncrypted == curEncrypted（否则已在上面返回）
+        if (prevEncrypted) {
+            const std::string curVerifier = computePasswordVerifier(config.password);
+            if (!previous.meta.passwordVerifier.empty() && previous.meta.passwordVerifier != curVerifier) {
+                res.success = false;
+                res.errors.push_back(L"增量备份失败：加密密码与上一份备份不一致。换密码会导致未变化文件无法解密。请改用全量备份重建仓库，或使用与上一份相同的密码。");
+                log.error(L"BackupManager", L"增量备份失败：密码不一致，需全量重建");
+                appendHistory(config.targetPath, res);
+                res.endTime = formatNowWide();
+                return res;
+            }
+        }
+    }
+
     // ---- 5. 比较 ----
     std::vector<ChangeRecord> changes;
     if (incremental) {
@@ -424,6 +468,17 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         e.info.hash = std::move(hash);
         e.info.hashed = true;
         e.dataPath = c.info.relativePath;
+        // 加密时记录密文大小和 Hash，供 verify 校验（data/ 中存的是 IV+密文，不是明文）
+        if (useEncryption) {
+            FileInfo fi;
+            if (FileSystem::getFileInfo(absDst, fi)) {
+                e.cipherSize = fi.size;
+            }
+            std::string cHash;
+            if (HashCalculator::fileSha256(absDst, cHash)) {
+                e.cipherHash = std::move(cHash);
+            }
+        }
         newEntries.push_back(std::move(e));
     }
 
@@ -456,6 +511,7 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     manifest.meta.fileCount = static_cast<uint64_t>(newEntries.size());
     if (!config.encryption.empty() && config.encryption != "none") {
         manifest.meta.encryption = config.encryption;
+        manifest.meta.passwordVerifier = computePasswordVerifier(config.password);
     }
     manifest.entries = std::move(newEntries);
     manifest.rebuildIndex();

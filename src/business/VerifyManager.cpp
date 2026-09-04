@@ -93,7 +93,8 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const VerifyOpti
 
         // 2a. 检查文件是否存在
         if (!FileSystem::exists(dataPath)) {
-            if (opts.repair) {
+            const bool encryptedEntry = (e.cipherSize > 0);
+            if (opts.repair && !encryptedEntry) {
                 std::wstring repairErr;
                 if (tryRepairEntry(e, dataDir, opts.sourcePath, repairErr)) {
                     ++res.repaired;
@@ -111,6 +112,9 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const VerifyOpti
         }
 
         // 2b. 检查大小是否一致（快速失败，避免读大文件后才发现）
+        // 加密文件：data/ 中存的是 IV+密文，用 cipherSize 校验；未加密文件用 info.size。
+        const bool encryptedEntry = (e.cipherSize > 0);
+        const uint64_t expectedSize = encryptedEntry ? e.cipherSize : e.info.size;
         uint64_t actualSize = 0;
         {
             FileInfo fi;
@@ -118,8 +122,8 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const VerifyOpti
                 actualSize = fi.size;
             }
         }
-        if (actualSize != e.info.size) {
-            if (opts.repair) {
+        if (actualSize != expectedSize) {
+            if (opts.repair && !encryptedEntry) {
                 std::wstring repairErr;
                 if (tryRepairEntry(e, dataDir, opts.sourcePath, repairErr)) {
                     ++res.repaired;
@@ -129,26 +133,27 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const VerifyOpti
                 }
                 ++res.corrupted;
                 res.errors.push_back(std::wstring(L"[损坏] ") + e.info.relativePath +
-                                      L" (大小不符: 期望 " + std::to_wstring(e.info.size) +
+                                      L" (大小不符: 期望 " + std::to_wstring(expectedSize) +
                                       L", 实际 " + std::to_wstring(actualSize) + L"; 修复失败: " + repairErr + L")");
                 continue;
             }
             ++res.corrupted;
             res.errors.push_back(std::wstring(L"[损坏] ") + e.info.relativePath +
-                                  L" (大小不符: 期望 " + std::to_wstring(e.info.size) +
+                                  L" (大小不符: 期望 " + std::to_wstring(expectedSize) +
                                   L", 实际 " + std::to_wstring(actualSize) + L")");
             continue;
         }
 
-        // 2c. 计算 Hash 并比较
+        // 2c. 计算 Hash 并比较（加密文件用密文 Hash，未加密文件用明文 Hash）
+        const std::string& expectedHash = encryptedEntry ? e.cipherHash : e.info.hash;
         std::string actualHash;
         if (!HashCalculator::fileSha256(dataPath, actualHash)) {
             ++res.corrupted;
             res.errors.push_back(std::wstring(L"[损坏] ") + e.info.relativePath + L" (无法计算 Hash)");
             continue;
         }
-        if (actualHash != e.info.hash) {
-            if (opts.repair) {
+        if (actualHash != expectedHash) {
+            if (opts.repair && !encryptedEntry) {
                 std::wstring repairErr;
                 if (tryRepairEntry(e, dataDir, opts.sourcePath, repairErr)) {
                     ++res.repaired;
@@ -158,13 +163,13 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const VerifyOpti
                 }
                 ++res.corrupted;
                 res.errors.push_back(std::wstring(L"[损坏] ") + e.info.relativePath +
-                                      L" (Hash 不一致: 期望 " + utf8ToWide(e.info.hash.substr(0, 16)) +
+                                      L" (Hash 不一致: 期望 " + utf8ToWide(expectedHash.substr(0, 16)) +
                                       L"..., 实际 " + utf8ToWide(actualHash.substr(0, 16)) + L"...; 修复失败: " + repairErr + L")");
                 continue;
             }
             ++res.corrupted;
             res.errors.push_back(std::wstring(L"[损坏] ") + e.info.relativePath +
-                                  L" (Hash 不一致: 期望 " + utf8ToWide(e.info.hash.substr(0, 16)) +
+                                  L" (Hash 不一致: 期望 " + utf8ToWide(expectedHash.substr(0, 16)) +
                                   L"..., 实际 " + utf8ToWide(actualHash.substr(0, 16)) + L"...)");
             continue;
         }

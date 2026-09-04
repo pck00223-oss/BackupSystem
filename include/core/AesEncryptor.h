@@ -16,6 +16,9 @@ public:
     // 用密码派生 256 位密钥（SHA-256(password)）。
     explicit AesEncryptor(const std::string& password);
 
+    // 测试用构造：直接使用 32 字节原始密钥（不经过 SHA-256 派生，用于 NIST 标准向量验证）。
+    AesEncryptor(const uint8_t* rawKey, size_t keyLen);
+
     // 加密明文数据，返回 IV(16字节) + 密文(PKCS7填充)。
     // 失败返回空 vector。
     std::vector<uint8_t> encrypt(const uint8_t* plaintext, size_t len) const;
@@ -23,6 +26,9 @@ public:
     // 解密数据（输入应为 IV + 密文格式），返回明文。空文件解密返回空 vector。
     // success 不为空时，*success 表示解密是否成功（失败原因：数据损坏/长度不足/填充非法）。
     std::vector<uint8_t> decrypt(const uint8_t* data, size_t len, bool* success = nullptr) const;
+
+    // 测试用：指定 IV 加密（用于 NIST 标准向量验证，生产代码应使用 encrypt 生成随机 IV）。
+    std::vector<uint8_t> encryptWithIV(const uint8_t* plaintext, size_t len, const uint8_t iv[16]) const;
 
     // 便捷重载：加密 string。
     std::vector<uint8_t> encryptString(const std::string& plaintext) const {

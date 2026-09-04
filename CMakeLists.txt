@@ -107,9 +107,9 @@ add_library(backup_core STATIC
 target_include_directories(backup_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(backup_core PUBLIC backup_flags)
 
-# CommandLineToArgvW 位于 shell32
+# CommandLineToArgvW 位于 shell32；BCryptGenRandom 位于 bcrypt
 if(WIN32)
-    target_link_libraries(backup_core PUBLIC shell32)
+    target_link_libraries(backup_core PUBLIC shell32 bcrypt)
 endif()
 
 # ============ 命令行入口 ============
