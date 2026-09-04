@@ -103,6 +103,10 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         return res;
     }
 
+    // ---- 1.5 崩溃恢复 ----
+    // 处理上次进程被强杀后遗留的 .baktmp / .baktmp.old 中间状态。
+    recoverResidualData(config.targetPath);
+
     // ---- 2. 扫描 ----
     std::vector<FileInfo> scanned;
     std::vector<std::wstring> scanErrors;
@@ -381,6 +385,77 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
                  std::to_wstring(res.totalBytes) + L" 字节, 失败 " +
                  std::to_wstring(res.failed));
     return res;
+}
+
+void BackupManager::recoverResidualData(const std::wstring& targetPath) {
+    const std::wstring dataDir = dataDirOf(targetPath);
+    if (!FileSystem::exists(dataDir)) return;
+
+    std::vector<FileInfo> entries;
+    std::vector<std::wstring> errors;
+    if (!FileScanner::scan(dataDir, entries, errors)) return;
+
+    Logger& log = Logger::instance();
+    const std::wstring oldSuffix = L".baktmp.old";
+    const std::wstring tmpSuffix = L".baktmp";
+
+    for (const auto& e : entries) {
+        const std::wstring& name = e.name;
+        const std::wstring fullPath = dataDir + L"\\" + e.relativePath;
+
+        // 先判断 .baktmp.old*（被移走的旧数据），因为它也以 .baktmp 结尾
+        bool isOldResidual = false;
+        std::wstring originalName;
+        if (name.size() > oldSuffix.size()) {
+            const size_t pos = name.rfind(oldSuffix);
+            if (pos != std::wstring::npos) {
+                const std::wstring after = name.substr(pos + oldSuffix.size());
+                bool allDigits = !after.empty() || after.empty();
+                // after 为空（.baktmp.old）或全为数字（.baktmp.old1）
+                for (wchar_t c : after) {
+                    if (c < L'0' || c > L'9') { allDigits = false; break; }
+                }
+                if (allDigits) {
+                    isOldResidual = true;
+                    originalName = name.substr(0, pos);
+                }
+            }
+        }
+
+        if (isOldResidual) {
+            // 计算原路径：把 e.relativePath 中的文件名替换为 originalName
+            std::wstring originalRelPath = e.relativePath;
+            const size_t lastSlash = originalRelPath.find_last_of(L"\\/");
+            if (lastSlash != std::wstring::npos) {
+                originalRelPath = originalRelPath.substr(0, lastSlash + 1) + originalName;
+            } else {
+                originalRelPath = originalName;
+            }
+            const std::wstring originalFullPath = dataDir + L"\\" + originalRelPath;
+
+            if (!FileSystem::exists(originalFullPath)) {
+                // 原路径不存在，恢复旧数据（上次在保存 Manifest 前被强杀）
+                if (FileSystem::movePath(fullPath, originalFullPath)) {
+                    log.warn(L"BackupManager", L"崩溃恢复: 还原旧数据 " + e.relativePath + L" -> " + originalRelPath);
+                } else {
+                    log.error(L"BackupManager", L"崩溃恢复: 还原旧数据失败 " + fullPath);
+                }
+            } else {
+                // 原路径已存在（新数据已就位，Manifest 已更新），删除旧数据
+                FileSystem::removeAll(fullPath);
+                log.warn(L"BackupManager", L"崩溃恢复: 清理遗留旧数据 " + e.relativePath);
+            }
+            continue;
+        }
+
+        // .baktmp：未完成的临时文件，直接删除
+        if (name.size() >= tmpSuffix.size() &&
+            name.compare(name.size() - tmpSuffix.size(), tmpSuffix.size(), tmpSuffix) == 0) {
+            FileSystem::removeAll(fullPath);
+            log.warn(L"BackupManager", L"崩溃恢复: 清理临时文件 " + e.relativePath);
+            continue;
+        }
+    }
 }
 
 }  // namespace backup

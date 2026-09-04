@@ -4,11 +4,37 @@
 #include "business/Manifest.h"
 #include "core/HashCalculator.h"
 #include "core/Utf.h"
+#include "engine/FileScanner.h"
 #include "engine/FileSystem.h"
 
 namespace backup {
 
-VerifyResult VerifyManager::run(const std::wstring& backupRoot) {
+namespace {
+
+// 检查文件名是否是 .baktmp.old 崩溃残留（含 .baktmp.oldN 数字后缀）。
+// 是则返回去掉后缀后的原文件名，否则返回空。
+std::wstring parseOldResidual(const std::wstring& name) {
+    const std::wstring suffix = L".baktmp.old";
+    if (name.size() <= suffix.size()) return L"";
+    const size_t pos = name.rfind(suffix);
+    if (pos == std::wstring::npos) return L"";
+    const std::wstring after = name.substr(pos + suffix.size());
+    for (wchar_t c : after) {
+        if (c < L'0' || c > L'9') return L"";
+    }
+    return name.substr(0, pos);
+}
+
+// 检查文件名是否以 .baktmp 结尾（未完成的临时文件）。
+bool isTmpResidual(const std::wstring& name) {
+    const std::wstring suffix = L".baktmp";
+    if (name.size() < suffix.size()) return false;
+    return name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+}  // namespace
+
+VerifyResult VerifyManager::run(const std::wstring& backupRoot, const Options& opts) {
     VerifyResult res;
 
     // 1. 读取 Manifest
@@ -23,8 +49,14 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot) {
 
     const std::wstring dataDir = backupRoot + L"\\data";
 
-    // 2. 逐条校验
+    // 2. 逐条校验 Manifest 中的文件条目
     for (const auto& e : manifest.entries) {
+        if (opts.cancelCheck && opts.cancelCheck()) {
+            res.errors.push_back(L"校验被取消");
+            res.success = false;
+            return res;
+        }
+
         // 目录和符号链接不做文件级校验
         if (e.info.type != FileType::File) {
             ++res.skipped;
@@ -32,8 +64,9 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot) {
         }
         ++res.total;
 
-        // 与 RestoreManager 保持一致：使用 Manifest 中记录的数据存储路径。
-        const std::wstring dataPath = dataDir + L"\\" + e.dataPath;
+        if (opts.progress) opts.progress(e.info.relativePath);
+
+        const std::wstring dataPath = dataDir + L"\\" + e.info.relativePath;
 
         // 2a. 检查文件是否存在
         if (!FileSystem::exists(dataPath)) {
@@ -76,7 +109,32 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot) {
         ++res.passed;
     }
 
-    res.success = (res.missing == 0 && res.corrupted == 0);
+    // 3. 崩溃残留检测：扫描 data/ 目录，查找 .baktmp / .baktmp.old 残留
+    if (FileSystem::exists(dataDir)) {
+        std::vector<FileInfo> entries;
+        std::vector<std::wstring> scanErrors;
+        if (FileScanner::scan(dataDir, entries, scanErrors)) {
+            for (const auto& e : entries) {
+                if (opts.cancelCheck && opts.cancelCheck()) {
+                    res.errors.push_back(L"残留检测被取消");
+                    res.success = false;
+                    return res;
+                }
+                const std::wstring& name = e.name;
+                if (!parseOldResidual(name).empty()) {
+                    ++res.residual;
+                    res.errors.push_back(std::wstring(L"[残留] 崩溃遗留旧数据: ") + e.relativePath +
+                                          L" (运行备份可自动恢复)");
+                } else if (isTmpResidual(name)) {
+                    ++res.residual;
+                    res.errors.push_back(std::wstring(L"[残留] 未完成临时文件: ") + e.relativePath +
+                                          L" (运行备份可自动清理)");
+                }
+            }
+        }
+    }
+
+    res.success = (res.missing == 0 && res.corrupted == 0 && res.residual == 0);
     return res;
 }
 

@@ -238,13 +238,19 @@ int cmdVerify(const std::vector<std::wstring>& args) {
     std::cout << "========== 完整性校验 ==========\n";
     std::cout << "备份目录 : " << wideToUtf8(backupRoot) << "\n";
 
-    const VerifyResult res = VerifyManager::run(backupRoot);
+    VerifyManager::Options vopts;
+    vopts.progress = [](const std::wstring& rel) {
+        std::cout << "  校验中: " << wideToUtf8(rel) << "\r";
+    };
+    const VerifyResult res = VerifyManager::run(backupRoot, vopts);
+    std::cout << "                                        \r";
 
     std::cout << "文件总数 : " << res.total << "\n";
     std::cout << "通过     : " << res.passed << "\n";
     std::cout << "缺失     : " << res.missing << "\n";
     std::cout << "损坏     : " << res.corrupted << "\n";
     std::cout << "跳过     : " << res.skipped << " (目录/符号链接)\n";
+    std::cout << "残留     : " << res.residual << " (.baktmp/.baktmp.old)\n";
     std::cout << "状态     : " << (res.success ? "完整" : "不完整") << "\n";
     for (const auto& e : res.errors) std::cout << "  " << wideToUtf8(e) << "\n";
     std::cout << "================================\n";
