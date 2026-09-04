@@ -122,7 +122,7 @@ add_executable(backupgui WIN32
     src/gui/MainWindow.cpp
     src/gui/TaskStore.cpp
 )
-target_link_libraries(backupgui PRIVATE backup_core backup_flags comctl32)
+target_link_libraries(backupgui PRIVATE backup_core backup_flags comctl32 crypt32)
 # MinGW 需要 -municode 才能使用 wWinMain 入口
 if(NOT MSVC)
     target_link_options(backupgui PRIVATE -municode)

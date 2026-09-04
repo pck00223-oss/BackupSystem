@@ -1,11 +1,17 @@
-// TaskStore.cpp - GUI 任务配置持久化实现
+// TaskStore.cpp - GUI 任务配置持久化实现（UTF-8 + DPAPI 加密密码）
 #include "gui/TaskStore.h"
 
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 #include <windows.h>
+#include <dpapi.h>
 #include <shlobj.h>
+
+#include "core/Utf.h"
+
+#pragma comment(lib, "crypt32.lib")
 
 namespace backup {
 namespace gui {
@@ -28,35 +34,74 @@ std::wstring TaskStore::storePath() {
         CreateDirectoryW(dir.c_str(), nullptr);
         return dir + L"\\tasks.dat";
     }
-    return L"tasks.dat";  // fallback: 当前目录
+    return L"tasks.dat";
+}
+
+std::string TaskStore::encryptPassword(const std::string& passwordUtf8) {
+    if (passwordUtf8.empty()) return "";
+    DATA_BLOB in, out;
+    in.pbData = (BYTE*)passwordUtf8.data();
+    in.cbData = (DWORD)passwordUtf8.size();
+    if (!CryptProtectData(&in, L"BackupSystem_Password", nullptr, nullptr, nullptr, 0, &out)) {
+        return "";
+    }
+    std::string hex;
+    hex.reserve(out.cbData * 2);
+    for (DWORD i = 0; i < out.cbData; ++i) {
+        char buf[3];
+        sprintf_s(buf, "%02x", out.pbData[i]);
+        hex += buf;
+    }
+    LocalFree(out.pbData);
+    return hex;
+}
+
+std::string TaskStore::decryptPassword(const std::string& hexEncrypted) {
+    if (hexEncrypted.empty() || hexEncrypted.size() % 2 != 0) return "";
+    std::vector<BYTE> data(hexEncrypted.size() / 2);
+    for (size_t i = 0; i < data.size(); ++i) {
+        unsigned int byte = 0;
+        if (sscanf_s(hexEncrypted.c_str() + i * 2, "%02x", &byte) != 1) return "";
+        data[i] = (BYTE)byte;
+    }
+    DATA_BLOB in, out;
+    in.pbData = data.data();
+    in.cbData = (DWORD)data.size();
+    if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr, 0, &out)) {
+        return "";
+    }
+    std::string password((char*)out.pbData, out.cbData);
+    LocalFree(out.pbData);
+    return password;
 }
 
 std::vector<BackupTask> TaskStore::load() {
     std::vector<BackupTask> tasks;
-    std::wifstream file(storePath().c_str());
+    std::ifstream file(wideToUtf8(storePath()));
     if (!file.is_open()) return tasks;
 
-    std::wstring line;
+    std::string line;
     while (std::getline(file, line)) {
         if (line.empty()) continue;
         BackupTask task;
-        std::wstringstream ss(line);
-        std::wstring token;
+        std::stringstream ss(line);
+        std::string token;
 
-        // 字段顺序：name \t source \t target \t mode \t encryption \t password \t keepSnapshots
-        if (!std::getline(ss, token, L'\t')) continue;
-        task.name = token;
-        if (!std::getline(ss, token, L'\t')) continue;
-        task.sourcePath = token;
-        if (!std::getline(ss, token, L'\t')) continue;
-        task.targetPath = token;
-        if (!std::getline(ss, token, L'\t')) continue;
-        task.mode = (token == L"incremental") ? BackupMode::Incremental : BackupMode::Full;
-        if (!std::getline(ss, token, L'\t')) continue;
-        task.encryption = std::string(token.begin(), token.end());
-        if (!std::getline(ss, token, L'\t')) continue;
-        task.password = std::string(token.begin(), token.end());
-        if (std::getline(ss, token, L'\t')) {
+        // 字段顺序（UTF-8，制表符分隔）：
+        // name \t source \t target \t mode \t encryption \t encryptedPassword \t keepSnapshots
+        if (!std::getline(ss, token, '\t')) continue;
+        task.name = utf8ToWide(token);
+        if (!std::getline(ss, token, '\t')) continue;
+        task.sourcePath = utf8ToWide(token);
+        if (!std::getline(ss, token, '\t')) continue;
+        task.targetPath = utf8ToWide(token);
+        if (!std::getline(ss, token, '\t')) continue;
+        task.mode = (token == "incremental") ? BackupMode::Incremental : BackupMode::Full;
+        if (!std::getline(ss, token, '\t')) continue;
+        task.encryption = token;
+        if (!std::getline(ss, token, '\t')) continue;
+        task.password = decryptPassword(token);  // DPAPI 解密
+        if (std::getline(ss, token, '\t')) {
             try { task.keepSnapshots = std::stoi(token); } catch (...) { task.keepSnapshots = 0; }
         }
 
@@ -66,17 +111,18 @@ std::vector<BackupTask> TaskStore::load() {
 }
 
 bool TaskStore::save(const std::vector<BackupTask>& tasks) {
-    std::wofstream file(storePath().c_str(), std::ios::trunc);
+    std::ofstream file(wideToUtf8(storePath()), std::ios::trunc);
     if (!file.is_open()) return false;
 
     for (const auto& task : tasks) {
-        file << task.name << L'\t'
-             << task.sourcePath << L'\t'
-             << task.targetPath << L'\t'
-             << (task.mode == BackupMode::Incremental ? L"incremental" : L"full") << L'\t'
-             << std::wstring(task.encryption.begin(), task.encryption.end()) << L'\t'
-             << std::wstring(task.password.begin(), task.password.end()) << L'\t'
-             << task.keepSnapshots << L'\n';
+        const std::string encPwd = encryptPassword(task.password);  // DPAPI 加密
+        file << wideToUtf8(task.name) << '\t'
+             << wideToUtf8(task.sourcePath) << '\t'
+             << wideToUtf8(task.targetPath) << '\t'
+             << (task.mode == BackupMode::Incremental ? "incremental" : "full") << '\t'
+             << task.encryption << '\t'
+             << (encPwd.empty() ? "" : encPwd) << '\t'
+             << task.keepSnapshots << '\n';
     }
     return true;
 }

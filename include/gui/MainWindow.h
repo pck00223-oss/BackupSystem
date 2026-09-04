@@ -3,6 +3,7 @@
 // 零第三方依赖，纯 Win32 API。
 #pragma once
 
+#include <atomic>
 #include <windows.h>
 #include <string>
 #include <vector>
@@ -20,9 +21,10 @@ enum ControlId : int {
     IDC_BTN_RESTORE = 1004,
     IDC_BTN_VERIFY = 1005,
     IDC_BTN_DELETE = 1006,
-    IDC_LOG = 1007,
-    IDC_PROGRESS = 1008,
-    IDC_STATUS = 1009,
+    IDC_BTN_CANCEL = 1007,
+    IDC_LOG = 1008,
+    IDC_PROGRESS = 1009,
+    IDC_STATUS = 1010,
 };
 
 // 自定义消息（后台线程 -> UI 线程）
@@ -60,7 +62,7 @@ private:
 
     // 后台执行状态
     HANDLE workerThread_ = nullptr;
-    volatile bool cancelFlag_ = false;
+    std::atomic<bool> cancelFlag_{false};
     bool busy_ = false;
 
     // ---- 窗口创建与布局 ----
@@ -86,6 +88,10 @@ private:
         std::wstring restorePath;  // 恢复时使用
         enum class Op { Backup, Restore, Verify } op = Op::Backup;
     };
+
+    // 启动 worker 线程：关闭旧句柄、创建新线程、失败时回滚 busy 状态。
+    void startWorker(WorkerParam::Op op, const BackupTask& task, const std::wstring& restorePath = L"");
+
     static DWORD WINAPI workerThreadProc(LPVOID param);
     void runBackup(const BackupTask& task);
     void runRestore(const BackupTask& task, const std::wstring& restorePath);

@@ -1,6 +1,7 @@
 // TaskStore.h - GUI 任务配置持久化
 // 职责：保存/加载用户创建的备份任务列表（名称、源、目标、模式、加密等）。
-// 用简单的制表符分隔文本文件存储，位置 %APPDATA%\BackupSystem\tasks.dat。
+// 存储格式：UTF-8 文本，制表符分隔，密码用 Windows DPAPI 加密后十六进制编码存储。
+// 文件位置：%APPDATA%\BackupSystem\tasks.dat
 #pragma once
 
 #include <string>
@@ -18,7 +19,7 @@ struct BackupTask {
     std::wstring targetPath;     // 备份根目录
     BackupMode mode = BackupMode::Full;
     std::string encryption;      // "none" / "aes256"
-    std::string password;        // 加密密码（encryption != "none" 时需要）
+    std::string password;        // 加密密码（encryption != "none" 时需要，内存中为明文 UTF-8）
     int keepSnapshots = 0;       // 保留快照数
 
     // 转换为核心层 BackupConfig。
@@ -36,6 +37,12 @@ public:
 
     // 获取存储文件路径。
     static std::wstring storePath();
+
+private:
+    // DPAPI 加密密码 → 十六进制字符串（仅当前用户可解密）。
+    static std::string encryptPassword(const std::string& passwordUtf8);
+    // 十六进制字符串 → DPAPI 解密密码（UTF-8）。
+    static std::string decryptPassword(const std::string& hexEncrypted);
 };
 
 }  // namespace gui
