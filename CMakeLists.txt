@@ -116,6 +116,18 @@ endif()
 add_executable(backupapp src/main.cpp)
 target_link_libraries(backupapp PRIVATE backup_core backup_flags)
 
+# ============ Win32 GUI 入口（零第三方依赖，纯 Win32 API）============
+add_executable(backupgui WIN32
+    src/gui/gui_main.cpp
+    src/gui/MainWindow.cpp
+    src/gui/TaskStore.cpp
+)
+target_link_libraries(backupgui PRIVATE backup_core backup_flags comctl32)
+# MinGW 需要 -municode 才能使用 wWinMain 入口
+if(NOT MSVC)
+    target_link_options(backupgui PRIVATE -municode)
+endif()
+
 # ============ 单元/集成测试 ============
 enable_testing()
 add_executable(backup_tests
