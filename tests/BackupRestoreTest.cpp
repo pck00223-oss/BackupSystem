@@ -616,6 +616,44 @@ TEST(FileCopier_TempFile_NoCollision_WithLegalFile) {
     CHECK(vr.success);
 }
 
+// 回归测试：真正的临时文件残留能被 verify 识别并被崩溃恢复清理
+TEST(CrashRecovery_TempResidual_Detected_And_Cleaned) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    // 全量备份
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+
+    // 手工在 data/ 目录创建两种残留（不在 Manifest 中）：
+    //   旧格式：a.txt.baktmp
+    //   新格式：b.txt.baktmp.12345.0
+    testutil::writeFile(env.target + L"\\data\\a.txt.baktmp", "old temp residual");
+    testutil::writeFile(env.target + L"\\data\\b.txt.baktmp.12345.0", "new temp residual");
+
+    // verify 应识别出 2 个残留
+    VerifyResult vr1 = VerifyManager::run(env.target);
+    CHECK(vr1.residual == 2);
+    CHECK(!vr1.success);
+
+    // 运行增量备份（触发 recoverResidualData），应自动清理残留
+    cfg.mode = BackupMode::Incremental;
+    BackupResult r2 = BackupManager::run(cfg);
+    CHECK(r2.success);
+
+    // 残留文件应被清理
+    CHECK(!FileSystem::exists(env.target + L"\\data\\a.txt.baktmp"));
+    CHECK(!FileSystem::exists(env.target + L"\\data\\b.txt.baktmp.12345.0"));
+
+    // verify 确认无残留
+    VerifyResult vr2 = VerifyManager::run(env.target);
+    CHECK(vr2.residual == 0);
+    CHECK(vr2.success);
+}
+
 // 回归测试：用户的正常 .baktmp.old 文件不被误删
 TEST(CrashRecovery_LegalBaktmpOldFile_NotDeleted) {
     TestEnv env;

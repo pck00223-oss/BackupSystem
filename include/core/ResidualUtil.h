@@ -36,17 +36,21 @@ inline std::wstring parseOldResidual(const std::wstring& name) {
 }
 
 // 判断文件名是否是临时文件残留。
+// 用 rfind 定位 .baktmp 的实际位置（可能在文件名中间，如 a.txt.baktmp.123.0）。
 // 匹配两种格式：
-//   1. 精确的 .baktmp（旧格式，兼容历史残留）
-//   2. .baktmp.<pid>.<counter>（新格式，FileCopier 唯一临时文件名）
+//   1. .baktmp 后无内容 → 旧格式残留（如 a.txt.baktmp）
+//   2. .baktmp 后是 .<数字> 或 .<数字>.<数字> → 新格式残留（如 a.txt.baktmp.123.0）
 inline bool isTempResidual(const std::wstring& name) {
     const std::wstring& suffix = tempSuffix();
     if (name.size() < suffix.size()) return false;
-    // 格式1：精确 .baktmp
-    if (name == suffix) return true;
-    // 格式2：.baktmp.<数字> 或 .baktmp.<数字>.<数字>
-    if (name.size() > suffix.size() + 1 && name[suffix.size()] == L'.') {
-        const std::wstring after = name.substr(suffix.size() + 1);
+    const size_t pos = name.rfind(suffix);
+    if (pos == std::wstring::npos) return false;
+    const size_t afterPos = pos + suffix.size();
+    // 格式1：后缀后无内容
+    if (afterPos == name.size()) return true;
+    // 格式2：后缀后是 .<数字> 或 .<数字>.<数字>
+    if (name[afterPos] == L'.') {
+        const std::wstring after = name.substr(afterPos + 1);
         if (after.empty()) return false;
         int dotCount = 0;
         const bool valid = std::all_of(after.begin(), after.end(), [&dotCount](wchar_t c) {
