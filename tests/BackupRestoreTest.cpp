@@ -9,6 +9,8 @@
 #include "business/RestoreManager.h"
 #include "app/TaskScheduler.h"
 #include "core/HashCalculator.h"
+#include "core/TimeUtil.h"
+#include "engine/FileScanner.h"
 #include "engine/FileSystem.h"
 
 #include <atomic>
@@ -241,6 +243,28 @@ TEST(Backup_SourceEqualsTarget_Rejected) {
     CHECK(found);
 }
 
+// 回归测试：目标路径用 .. 语法“看起来在源之外、实际解析到源内部”也必须被拒绝
+TEST(Backup_SourceDotDotBypass_Rejected) {
+    TestEnv env;
+    // 源为 docs\sub；构造 docs\subx\..\sub\tgt —— 字面上不在源前缀下，
+    // 但 GetFullPathNameW 解析后落在源目录内部。
+    const std::wstring src = env.src + L"docs\\sub";
+    CHECK(FileSystem::createDirectories(env.src + L"docs\\subx"));
+
+    BackupConfig cfg;
+    cfg.sourcePath = src;
+    cfg.targetPath = env.src + L"docs\\subx\\..\\sub\\tgt";
+    cfg.mode = BackupMode::Full;
+
+    BackupResult res = BackupManager::run(cfg);
+    CHECK(!res.success);
+    bool found = false;
+    for (const auto& e : res.errors) {
+        if (e.find(L"目标路径不能等于或位于源目录内") != std::wstring::npos) found = true;
+    }
+    CHECK(found);
+}
+
 // 回归测试：取消备份后 Manifest 必须保持旧版，不能保存部分快照
 TEST(Backup_CancelPreservesOldManifest) {
     TestEnv env;
@@ -260,16 +284,27 @@ TEST(Backup_CancelPreservesOldManifest) {
     std::string oldContent((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
     ifs.close();
 
-    // 修改源文件，增量备份时在复制阶段取消
+    // 修改源文件并新增两个文件，增量备份时在复制阶段取消
     testutil::writeFile(env.src + L"a.txt", "modified content");
-    testutil::writeFile(env.src + L"new.txt", "new file");
+    testutil::writeFile(env.src + L"new1.txt", "new file 1");
+    testutil::writeFile(env.src + L"new2.txt", "new file 2");
     cfg.mode = BackupMode::Incremental;
 
-    // progress 在每个文件复制前调用，第一次调用后置取消标志，
-    // 确保至少进入复制阶段再取消（而非扫描阶段取消）
+    // progress 在扫描阶段也会被调用（每个扫描条目一次），因此先统计扫描条目数，
+    // 只在“复制阶段第 2 个文件”开始前取消：保证至少 1 个文件已复制成功，
+    // 且取消发生在复制循环内（而非扫描后立即返回）。
+    std::vector<FileInfo> preview;
+    std::vector<std::wstring> scanErr;
+    CHECK(FileScanner::scan(env.src, preview, scanErr));
+    const size_t scanCallCount = preview.size();
+
     bool cancelNow = false;
+    int progressCalls = 0;
     BackupManager::Options opts;
-    opts.progress = [&](const std::wstring&) { cancelNow = true; };
+    opts.progress = [&](const std::wstring&) {
+        ++progressCalls;
+        if (static_cast<size_t>(progressCalls) == scanCallCount + 2) cancelNow = true;
+    };
     opts.cancelCheck = [&]() { return cancelNow; };
     BackupResult r2 = BackupManager::run(cfg, opts);
     CHECK(r2.cancelled);
@@ -280,6 +315,67 @@ TEST(Backup_CancelPreservesOldManifest) {
     std::string newContent((std::istreambuf_iterator<char>(ifs2)), std::istreambuf_iterator<char>());
     ifs2.close();
     CHECK(oldContent == newContent);
+}
+
+// 回归测试：文件与同名目录互换（file <-> directory）时，
+// 增量备份应更新 Manifest 类型并在 data/ 中完成物理替换。
+TEST(Backup_Incremental_TypeChangeFileDir) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+    CHECK(BackupManager::run(cfg).success);
+
+    // a.txt 原本是文件 -> 改为同名目录并放入子文件
+    testutil::removeAll(env.src + L"a.txt");
+    CHECK(FileSystem::createDirectories(env.src + L"a.txt"));
+    testutil::writeFile(env.src + L"a.txt\\inner.txt", "inner content");
+
+    // emptydir 原本是目录 -> 改为同名文件
+    testutil::removeAll(env.src + L"emptydir");
+    testutil::writeFile(env.src + L"emptydir", "now a file");
+
+    cfg.mode = BackupMode::Incremental;
+    BackupResult res = BackupManager::run(cfg);
+    CHECK(res.success);
+    CHECK(res.failed == 0);
+
+    // Manifest 中的类型已更新
+    Manifest m;
+    CHECK(m.loadFromFile(env.target + L"\\manifest.txt"));
+    const Manifest::Entry* eDir = m.find(L"a.txt");
+    CHECK(eDir != nullptr);
+    CHECK(eDir->info.type == FileType::Directory);
+    const Manifest::Entry* eFile = m.find(L"emptydir");
+    CHECK(eFile != nullptr);
+    CHECK(eFile->info.type == FileType::File);
+
+    // data/ 中物理形态正确
+    CHECK(FileSystem::isDirectory(env.target + L"\\data\\a.txt"));
+    CHECK(FileSystem::exists(env.target + L"\\data\\emptydir"));
+    CHECK(!FileSystem::isDirectory(env.target + L"\\data\\emptydir"));
+    CHECK_EQ(hashOf(env.target + L"\\data\\emptydir"), hashOf(env.src + L"emptydir"));
+
+    // data/ 根下不应遗留任何 .baktmp.old 旁路数据
+    std::vector<std::pair<std::wstring, FileType>> dataRoot;
+    CHECK(FileSystem::listDirectory(env.target + L"\\data", dataRoot));
+    for (const auto& entry : dataRoot) {
+        CHECK(entry.first.find(L".baktmp.old") == std::wstring::npos);
+    }
+
+    // 恢复后结构一致
+    RestoreConfig rcfg;
+    rcfg.backupRoot = env.target;
+    rcfg.restorePath = env.restore;
+    RestoreResult rres = RestoreManager::run(rcfg);
+    CHECK(rres.success);
+    CHECK(rres.failed == 0);
+    CHECK(FileSystem::exists(env.restore + L"\\a.txt\\inner.txt"));
+    CHECK_EQ(hashOf(env.restore + L"\\a.txt\\inner.txt"), hashOf(env.src + L"a.txt\\inner.txt"));
+    CHECK(FileSystem::exists(env.restore + L"\\emptydir"));
+    CHECK(!FileSystem::isDirectory(env.restore + L"\\emptydir"));
+    CHECK_EQ(hashOf(env.restore + L"\\emptydir"), hashOf(env.src + L"emptydir"));
 }
 
 // 回归测试：调度器 stop() 后重新 start()，取消标志必须复位，runNow 能正常执行
@@ -327,7 +423,9 @@ TEST(Scheduler_MissedTime_RunsOnce) {
     ScheduledTask task;
     task.name = L"test";
     task.config = cfg;
-    task.scheduleTime = "00:00";  // 肯定已错过，启动后补跑一次
+    // 使用当前时刻 HH:MM 作为计划时间：启动时必然“已错过”（或正好到点），
+    // 补跑一次后当天不会再触发，且不受跨午夜/固定时间点影响。
+    task.scheduleTime = currentHHMM();
     scheduler.addTask(task);
 
     scheduler.start();

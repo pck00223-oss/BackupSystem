@@ -24,6 +24,16 @@ FileInfo makeFile(const std::wstring& path, uint64_t size, uint64_t mtime,
     return f;
 }
 
+FileInfo makeDir(const std::wstring& path, uint64_t mtime) {
+    FileInfo f;
+    f.relativePath = path;
+    f.name = path.substr(path.find_last_of(L"\\/") + 1);
+    f.size = 0;
+    f.modifiedTime = mtime;
+    f.type = FileType::Directory;
+    return f;
+}
+
 Manifest buildPrevious(const std::vector<FileInfo>& files) {
     Manifest m;
     m.meta.backupId = "prev";
@@ -114,4 +124,36 @@ TEST(Comparator_NoHashProviderConservative) {
     auto prev = buildPrevious({makeFile(L"a.txt", 100, 1000, "")});
     auto r = FileComparator::compare({makeFile(L"a.txt", 100, 2000, "")}, prev, nullptr);
     CHECK_EQ(changeOf(r, L"a.txt"), FileChangeType::Modified);
+}
+
+TEST(Comparator_TypeChangeFileToDirectory) {
+    // 文件 -> 同名目录：当前目录 Added，旧文件 Deleted
+    auto prev = buildPrevious({makeFile(L"a.txt", 100, 1000, "hash:old")});
+    auto r = FileComparator::compare({makeDir(L"a.txt", 2000)}, prev, fakeHash);
+
+    int addedDir = 0;
+    int deletedFile = 0;
+    for (const auto& c : r) {
+        if (c.info.relativePath != L"a.txt") continue;
+        if (c.info.type == FileType::Directory && c.change == FileChangeType::Added) ++addedDir;
+        if (c.info.type == FileType::File && c.change == FileChangeType::Deleted) ++deletedFile;
+    }
+    CHECK_EQ(addedDir, 1);
+    CHECK_EQ(deletedFile, 1);
+}
+
+TEST(Comparator_TypeChangeDirectoryToFile) {
+    // 目录 -> 同名文件：当前文件 Added，旧目录 Deleted
+    auto prev = buildPrevious({makeDir(L"a.txt", 1000)});
+    auto r = FileComparator::compare({makeFile(L"a.txt", 42, 2000, "hash:new")}, prev, fakeHash);
+
+    int addedFile = 0;
+    int deletedDir = 0;
+    for (const auto& c : r) {
+        if (c.info.relativePath != L"a.txt") continue;
+        if (c.info.type == FileType::File && c.change == FileChangeType::Added) ++addedFile;
+        if (c.info.type == FileType::Directory && c.change == FileChangeType::Deleted) ++deletedDir;
+    }
+    CHECK_EQ(addedFile, 1);
+    CHECK_EQ(deletedDir, 1);
 }

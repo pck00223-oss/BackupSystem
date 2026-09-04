@@ -76,10 +76,15 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     }
     // 禁止目标等于源或位于源目录内，否则扫描会把备份产物也当成源内容，自我膨胀。
     {
-        std::wstring srcNorm = config.sourcePath;
-        std::wstring tgtNorm = config.targetPath;
-        while (!srcNorm.empty() && srcNorm.back() == L'\\') srcNorm.pop_back();
-        while (!tgtNorm.empty() && tgtNorm.back() == L'\\') tgtNorm.pop_back();
+        // 先解析为规范化绝对路径，避免 C:\a\sub\..\tgt 这类写法绕过包含关系判断。
+        const auto normDir = [](const std::wstring& p) {
+            std::wstring s = FileSystem::fullPath(p);
+            // 保留盘符根 "C:\"（长度 3），其余去掉尾部路径分隔符。
+            while (s.size() > 3 && (s.back() == L'\\' || s.back() == L'/')) s.pop_back();
+            return s;
+        };
+        const std::wstring srcNorm = normDir(config.sourcePath);
+        const std::wstring tgtNorm = normDir(config.targetPath);
         const std::wstring prefix = srcNorm + L"\\";
         const bool sameAsSource = (wcsicmpSafe(tgtNorm, srcNorm) == 0);
         const bool insideSource = (tgtNorm.size() > prefix.size() &&
@@ -183,6 +188,56 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
 
     std::vector<Manifest::Entry> newEntries;
 
+    // 文件 <-> 目录类型互换：先把挡路的旧文件/旧目录移到旁路，
+    // 复制成功且 Manifest 更新后再删除；若本次备份失败/取消，
+    // 则在返回前还原，保证旧 Manifest 仍可恢复。
+    struct StagedPath {
+        std::wstring dst;
+        std::wstring stage;
+    };
+    std::vector<StagedPath> stagedPaths;
+    const auto makeStageName = [](const std::wstring& dst) {
+        std::wstring stage = dst + L".baktmp.old";
+        int n = 1;
+        while (FileSystem::exists(stage)) {
+            stage = dst + L".baktmp.old" + std::to_wstring(n++);
+        }
+        return stage;
+    };
+    const auto stageExistingPath = [&](const std::wstring& dst) {
+        if (!FileSystem::exists(dst)) return true;
+        const std::wstring stage = makeStageName(dst);
+        if (!FileSystem::movePath(dst, stage)) return false;
+        stagedPaths.push_back(StagedPath{dst, stage});
+        return true;
+    };
+    const auto rollbackStagedPaths = [&]() {
+        for (auto it = stagedPaths.rbegin(); it != stagedPaths.rend(); ++it) {
+            if (FileSystem::exists(it->dst)) {
+                if (FileSystem::isDirectory(it->dst)) {
+                    FileSystem::removeAll(it->dst);   // 本次新建的目录树
+                } else {
+                    FileSystem::deleteFile(it->dst);  // 本次写入的新文件
+                }
+            }
+            if (!FileSystem::movePath(it->stage, it->dst)) {
+                log.error(L"BackupManager",
+                          L"还原旧目录失败，数据仍在: " + it->stage + L" -> " + it->dst);
+            }
+        }
+        stagedPaths.clear();
+    };
+    // 确保目标父目录存在；若父路径被旧文件占据（文件 -> 目录互换），先移走旧文件。
+    const auto ensureParentDirectories = [&](const std::wstring& absDst) {
+        const size_t pos = absDst.find_last_of(L"\\/");
+        if (pos == std::wstring::npos) return true;
+        const std::wstring parent = absDst.substr(0, pos);
+        if (FileSystem::exists(parent) && !FileSystem::isDirectory(parent)) {
+            if (!stageExistingPath(parent)) return false;
+        }
+        return FileSystem::createDirectories(parent);
+    };
+
     for (const auto& c : changes) {
         if (c.change != FileChangeType::Added && c.change != FileChangeType::Modified) continue;
         // 目录只进入 Manifest，不复制数据
@@ -204,10 +259,12 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         const std::wstring absSrc = config.sourcePath + L"\\" + c.info.relativePath;
         const std::wstring absDst = dataDir + L"\\" + c.info.relativePath;
 
-        // 确保目标父目录存在
-        const size_t pos = absDst.find_last_of(L"\\/");
-        if (pos != std::wstring::npos) {
-            FileSystem::createDirectories(absDst.substr(0, pos));
+        // 确保目标父目录存在（文件 -> 目录互换时旧文件在此先移走）
+        if (!ensureParentDirectories(absDst)) {
+            ++res.failed;
+            res.errors.push_back(std::wstring(L"无法准备目标父目录: ") + c.info.relativePath);
+            log.error(L"BackupManager", L"无法准备目标父目录: " + c.info.relativePath);
+            continue;
         }
 
         // 计算源文件 Hash（同时作为备份完整性基准）
@@ -217,6 +274,16 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
             res.errors.push_back(std::wstring(L"计算 Hash 失败: ") + c.info.relativePath);
             log.error(L"BackupManager", L"计算 Hash 失败: " + c.info.relativePath);
             continue;
+        }
+
+        // 若目标位置残留的是旧目录（目录 -> 文件互换或早期数据），先移走再写文件。
+        if (FileSystem::isDirectory(absDst)) {
+            if (!stageExistingPath(absDst)) {
+                ++res.failed;
+                res.errors.push_back(std::wstring(L"无法移走旧目录: ") + c.info.relativePath);
+                log.error(L"BackupManager", L"无法移走旧目录: " + c.info.relativePath);
+                continue;
+            }
         }
 
         std::string copyErr;
@@ -254,6 +321,7 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     // 否则失败/未处理的文件会从清单中消失，恢复时静默缺失。
     if (res.cancelled || res.failed > 0) {
         log.error(L"BackupManager", L"备份" + (res.cancelled ? L"被取消" : L"有 " + std::to_wstring(res.failed) + L" 个失败") + L"，不覆盖旧 Manifest（保留上一次完整清单）");
+        rollbackStagedPaths();
         res.success = false;
         appendHistory(config.targetPath, res);
         res.endTime = formatNowWide();
@@ -274,17 +342,31 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         res.success = false;
         res.errors.push_back(std::wstring(L"保存 Manifest 失败: ") + utf8ToWide(saveErr));
         log.error(L"BackupManager", L"保存 Manifest 失败: " + utf8ToWide(saveErr));
+        rollbackStagedPaths();
         res.endTime = formatNowWide();
         return res;
     }
+
+    // 类型互换时被移走的旧文件/旧目录：Manifest 已成功更新，可安全删除。
+    for (const auto& sd : stagedPaths) {
+        if (!FileSystem::removeAll(sd.stage)) {
+            log.warn(L"BackupManager", L"清理旁路旧数据失败: " + sd.stage);
+        }
+    }
+    stagedPaths.clear();
 
     // 增量备份：清理 data/ 里已删除文件的旧数据，避免长期占空间
     if (incremental) {
         for (const auto& c : changes) {
             if (c.change != FileChangeType::Deleted) continue;
-            if (c.info.type != FileType::File) continue;
             const std::wstring oldData = dataDir + L"\\" + c.info.relativePath;
-            FileSystem::deleteFile(oldData);
+            if (c.info.type == FileType::File) {
+                FileSystem::deleteFile(oldData);
+            } else if (c.info.type == FileType::Directory && FileSystem::isDirectory(oldData)) {
+                // 只有路径上仍是目录才删除整棵树；
+                // 目录->文件互换时该路径已是新文件，旧树在 stagedPaths 中另行清理。
+                FileSystem::removeAll(oldData);
+            }
         }
     }
 

@@ -21,6 +21,17 @@ std::vector<ChangeRecord> FileComparator::compare(const std::vector<FileInfo>& c
     }
 
     std::set<std::wstring> seen;
+    // 类型互换时旧条目需要单独产生一条 Deleted 记录，
+    // 让上层清理旧数据（文件变目录时删旧文件；目录变文件时删旧目录树）。
+    const auto pushDeleted = [](std::vector<ChangeRecord>& out, const Manifest::Entry& old) {
+        ChangeRecord rec;
+        rec.info = old.info;
+        rec.info.hash.clear();
+        rec.info.hashed = false;
+        rec.change = FileChangeType::Deleted;
+        out.push_back(std::move(rec));
+    };
+
     for (const auto& fi : current) {
         seen.insert(fi.relativePath);
         ChangeRecord rec;
@@ -33,7 +44,18 @@ std::vector<ChangeRecord> FileComparator::compare(const std::vector<FileInfo>& c
         } else {
             const Manifest::Entry& old = *it->second;
             if (fi.type == FileType::Directory) {
-                rec.change = FileChangeType::Unchanged;
+                if (old.info.type == FileType::Directory) {
+                    // 目录前后都是目录 -> 未变化
+                    rec.change = FileChangeType::Unchanged;
+                } else {
+                    // 文件 -> 目录：当前目录重新入库，旧文件删除
+                    rec.change = FileChangeType::Added;
+                    pushDeleted(result, *it->second);
+                }
+            } else if (old.info.type != FileType::File) {
+                // 目录/符号链接 -> 文件：当前文件重新备份，旧对象删除
+                rec.change = FileChangeType::Added;
+                pushDeleted(result, *it->second);
             } else if (fi.size != old.info.size) {
                 // 大小变化 -> 修改
                 rec.change = FileChangeType::Modified;

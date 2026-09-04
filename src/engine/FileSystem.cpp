@@ -192,6 +192,48 @@ bool FileSystem::deleteFile(const std::wstring& path) {
     return ::DeleteFileW(toLongPath(path).c_str()) != FALSE;
 }
 
+bool FileSystem::removeAll(const std::wstring& path) {
+    const std::wstring lp = toLongPath(path);
+    DWORD attrs = ::GetFileAttributesW(lp.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES) return false;
+
+    if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
+        // 联接点/目录符号链接只删除链接本身，不跟随目标。
+        if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) {
+            ::SetFileAttributesW(lp.c_str(), FILE_ATTRIBUTE_NORMAL);
+            return ::RemoveDirectoryW(lp.c_str()) != FALSE;
+        }
+
+        std::vector<std::pair<std::wstring, FileType>> entries;
+        if (listDirectory(path, entries)) {
+            for (const auto& e : entries) {
+                removeAll(path + L"\\" + e.first);
+            }
+        }
+        ::SetFileAttributesW(lp.c_str(), FILE_ATTRIBUTE_NORMAL);
+        return ::RemoveDirectoryW(lp.c_str()) != FALSE;
+    }
+
+    ::SetFileAttributesW(lp.c_str(), FILE_ATTRIBUTE_NORMAL);
+    return ::DeleteFileW(lp.c_str()) != FALSE;
+}
+
+bool FileSystem::movePath(const std::wstring& from, const std::wstring& to) {
+    if (from.empty() || to.empty()) return false;
+    return ::MoveFileExW(toLongPath(from).c_str(), toLongPath(to).c_str(), 0) != FALSE;
+}
+
+std::wstring FileSystem::fullPath(const std::wstring& path) {
+    if (path.empty()) return {};
+    const DWORD need = ::GetFullPathNameW(path.c_str(), 0, nullptr, nullptr);
+    if (need == 0) return path;
+    std::wstring buf(static_cast<size_t>(need), L'\0');
+    const DWORD len = ::GetFullPathNameW(path.c_str(), need, &buf[0], nullptr);
+    if (len == 0 || len >= need) return path;
+    buf.resize(len);
+    return buf;
+}
+
 uint64_t FileSystem::nowSeconds() {
     FILETIME ft;
     ::GetSystemTimeAsFileTime(&ft);

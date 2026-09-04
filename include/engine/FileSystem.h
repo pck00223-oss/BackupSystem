@@ -78,6 +78,12 @@ public:
     static bool setFileTimes(const std::wstring& path, uint64_t createdSec, uint64_t modifiedSec);
 
     static bool deleteFile(const std::wstring& path);
+    // 递归删除文件或目录树（目录内文件先清只读属性再删除）。
+    static bool removeAll(const std::wstring& path);
+    // 同卷移动（不覆盖已存在目标）。
+    static bool movePath(const std::wstring& from, const std::wstring& to);
+    // 解析为规范化绝对路径（处理 . 与 ..；失败时原样返回）。
+    static std::wstring fullPath(const std::wstring& path);
 
     // 当前 Unix 时间（秒）。
     static uint64_t nowSeconds();
