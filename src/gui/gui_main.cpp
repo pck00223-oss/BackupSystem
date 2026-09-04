@@ -8,6 +8,22 @@ using namespace backup::gui;
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                      PWSTR /*pCmdLine*/, int /*nCmdShow*/) {
+    // 运行时启用 Per-Monitor V2 DPI 感知（避免模糊，无需嵌入清单）
+    {
+        HMODULE user32 = ::LoadLibraryW(L"user32.dll");
+        if (user32) {
+            using SetDpiCtxFn = BOOL(WINAPI*)(void*);
+            auto setDpi = (SetDpiCtxFn)::GetProcAddress(user32, "SetProcessDpiAwarenessContext");
+            if (setDpi) {
+                // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+                setDpi(reinterpret_cast<void*>(-4));
+            } else {
+                ::SetProcessDPIAware();
+            }
+            // 不 FreeLibrary：user32 为进程内常用 DLL
+        }
+    }
+
     // 初始化 COM（用于 SHBrowseForFolder 等）
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 

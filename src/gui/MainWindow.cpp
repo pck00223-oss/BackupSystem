@@ -21,6 +21,10 @@ namespace gui {
 static INT_PTR CALLBACK newTaskDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
 static INT_PTR CALLBACK inputDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
 
+namespace {
+constexpr int kHeaderHeight = 72;
+}
+
 // ============ 构造/析构 ============
 MainWindow::MainWindow() = default;
 
@@ -30,12 +34,36 @@ MainWindow::~MainWindow() {
         WaitForSingleObject(workerThread_, 5000);
         CloseHandle(workerThread_);
     }
+    if (titleFont_) DeleteObject(titleFont_);
+    if (subtitleFont_) DeleteObject(subtitleFont_);
+    if (normalFont_) DeleteObject(normalFont_);
+    if (fixedFont_) DeleteObject(fixedFont_);
+    if (headerBrush_) DeleteObject(headerBrush_);
+    if (panelBrush_) DeleteObject(panelBrush_);
+    if (borderBrush_) DeleteObject(borderBrush_);
 }
 
 // ============ 窗口创建 ============
 HWND MainWindow::create(HINSTANCE hInstance) {
     hInstance_ = hInstance;
     tasks_ = TaskStore::load();
+
+    // 字体与画刷（现代简洁风格，参考豆包）
+    titleFont_ = CreateFontW(-22, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    subtitleFont_ = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                 CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    normalFont_ = CreateFontW(-14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                              CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    fixedFont_ = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                              CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
+    headerBrush_ = CreateSolidBrush(RGB(255, 255, 255));       // 顶部白色
+    panelBrush_ = CreateSolidBrush(RGB(245, 246, 248));         // 主背景浅灰
+    borderBrush_ = CreateSolidBrush(RGB(228, 230, 235));        // 分隔线
 
     // 注册窗口类
     WNDCLASSEXW wc = {0};
@@ -44,7 +72,7 @@ HWND MainWindow::create(HINSTANCE hInstance) {
     wc.lpfnWndProc = wndProc;
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszClassName = L"BackupSystemMainWindow";
     RegisterClassExW(&wc);
 
@@ -67,7 +95,7 @@ HWND MainWindow::create(HINSTANCE hInstance) {
     hwnd_ = CreateWindowExW(
         0, L"BackupSystemMainWindow", L"BackupSystem - 数据备份工具",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 900, 600,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1020, 680,
         nullptr, nullptr, hInstance, this);
 
     if (!hwnd_) return nullptr;
@@ -102,6 +130,48 @@ LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             int h = HIWORD(lParam);
             self->layoutControls(w, h);
             return 0;
+        }
+
+        case WM_GETMINMAXINFO: {
+            auto* mmi = (MINMAXINFO*)lParam;
+            mmi->ptMinTrackSize.x = 780;
+            mmi->ptMinTrackSize.y = 520;
+            return 0;
+        }
+
+        case WM_CTLCOLORSTATIC: {
+            HDC hdc = (HDC)wParam;
+            HWND ctl = (HWND)lParam;
+            const int id = (int)GetDlgCtrlID(ctl);
+            SetBkMode(hdc, TRANSPARENT);
+            if (id == IDC_TITLE) {
+                SetTextColor(hdc, RGB(28, 31, 38));
+                return (LRESULT)self->headerBrush_;
+            }
+            if (id == IDC_SUBTITLE) {
+                SetTextColor(hdc, RGB(112, 117, 125));
+                return (LRESULT)self->headerBrush_;
+            }
+            if (id == IDC_STATUS) {
+                SetTextColor(hdc, RGB(112, 117, 125));
+                return (LRESULT)self->panelBrush_;
+            }
+            SetTextColor(hdc, RGB(48, 52, 60));
+            return (LRESULT)self->panelBrush_;
+        }
+
+        case WM_ERASEBKGND: {
+            HDC hdc = (HDC)wParam;
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            FillRect(hdc, &rc, self->panelBrush_);
+            // 顶部白色标题区
+            RECT header = {0, 0, rc.right, kHeaderHeight};
+            FillRect(hdc, &header, self->headerBrush_);
+            // 标题底部分隔线
+            RECT line = {0, kHeaderHeight, rc.right, kHeaderHeight + 1};
+            FillRect(hdc, &line, self->borderBrush_);
+            return 1;
         }
 
         case WM_COMMAND: {
@@ -154,12 +224,15 @@ LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
 // ============ 控件创建与布局 ============
 void MainWindow::createControls() {
-    // 任务列表
-    taskList_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
-        0, 0, 0, 0, hwnd_, (HMENU)IDC_TASKLIST, hInstance_, nullptr);
+    // 顶部标题区
+    titleLabel_ = CreateWindowExW(0, L"STATIC", L"BackupSystem",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        0, 0, 0, 0, hwnd_, (HMENU)IDC_TITLE, hInstance_, nullptr);
+    subtitleLabel_ = CreateWindowExW(0, L"STATIC", L"本地数据备份 · 增量检测 · 快照 · 加密",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        0, 0, 0, 0, hwnd_, (HMENU)IDC_SUBTITLE, hInstance_, nullptr);
 
-    // 按钮
+    // 按钮（统一字体与 Tab 顺序）
     struct Btn { int id; const wchar_t* text; };
     Btn buttons[] = {
         {IDC_BTN_NEW, L"新建任务"},
@@ -170,16 +243,33 @@ void MainWindow::createControls() {
         {IDC_BTN_CANCEL, L"取消"},
     };
     for (const auto& b : buttons) {
-        CreateWindowExW(0, L"BUTTON", b.text,
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        HWND btn = CreateWindowExW(0, L"BUTTON", b.text,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             0, 0, 0, 0, hwnd_, (HMENU)b.id, hInstance_, nullptr);
+        SendMessageW(btn, WM_SETFONT, (WPARAM)normalFont_, TRUE);
     }
+
+    // 分组标签
+    listLabel_ = CreateWindowExW(0, L"STATIC", L"备份任务",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        0, 0, 0, 0, hwnd_, (HMENU)IDC_LIST_LABEL, hInstance_, nullptr);
+    logLabel_ = CreateWindowExW(0, L"STATIC", L"运行日志",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        0, 0, 0, 0, hwnd_, (HMENU)IDC_LOG_LABEL, hInstance_, nullptr);
+    SendMessageW(listLabel_, WM_SETFONT, (WPARAM)normalFont_, TRUE);
+    SendMessageW(logLabel_, WM_SETFONT, (WPARAM)normalFont_, TRUE);
+
+    // 任务列表
+    taskList_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | LBS_NOTIFY,
+        0, 0, 0, 0, hwnd_, (HMENU)IDC_TASKLIST, hInstance_, nullptr);
+    SendMessageW(taskList_, WM_SETFONT, (WPARAM)normalFont_, TRUE);
 
     // 日志区（只读多行编辑框）
     logBox_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
         0, 0, 0, 0, hwnd_, (HMENU)IDC_LOG, hInstance_, nullptr);
-    SendMessageW(logBox_, WM_SETFONT, (WPARAM)GetStockObject(ANSI_FIXED_FONT), TRUE);
+    SendMessageW(logBox_, WM_SETFONT, (WPARAM)fixedFont_, TRUE);
 
     // 进度条
     INITCOMMONCONTROLSEX icc = {sizeof(icc), ICC_PROGRESS_CLASS};
@@ -192,45 +282,72 @@ void MainWindow::createControls() {
     statusLabel_ = CreateWindowExW(0, L"STATIC", L"就绪",
         WS_CHILD | WS_VISIBLE | SS_LEFT,
         0, 0, 0, 0, hwnd_, (HMENU)IDC_STATUS, hInstance_, nullptr);
+    SendMessageW(statusLabel_, WM_SETFONT, (WPARAM)normalFont_, TRUE);
+    SendMessageW(titleLabel_, WM_SETFONT, (WPARAM)titleFont_, TRUE);
+    SendMessageW(subtitleLabel_, WM_SETFONT, (WPARAM)subtitleFont_, TRUE);
 }
 
 void MainWindow::layoutControls(int width, int height) {
-    const int margin = 8;
-    const int btnHeight = 30;
-    const int btnWidth = 80;
-    const int listWidth = 220;
-    const int statusHeight = 20;
-    const int progressHeight = 18;
+    const int margin = 16;
+    const int gap = 12;
+    const int btnW = 92;
+    const int btnH = 32;
+    const int listW = 260;
+    const int statusH = 24;
+    const int progressH = 18;
+
+    // 顶部标题区（白色背景，深色文字）
+    MoveWindow(titleLabel_, margin + 4, 14, 400, 28, TRUE);
+    MoveWindow(subtitleLabel_, margin + 4, 44, 560, 18, TRUE);
+
+    // 底部固定区
+    const int bottomY = height - margin;
+    const int progressY = bottomY - statusH - progressH - 8;
 
     // 左侧任务列表
-    MoveWindow(taskList_, margin, margin, listWidth, height - margin * 2, TRUE);
+    const int listLabelY = kHeaderHeight + margin + 2;
+    MoveWindow(listLabel_, margin, listLabelY, 200, 20, TRUE);
+    const int listY = listLabelY + 26;
+    const int listBottom = progressY - margin;
+    MoveWindow(taskList_, margin, listY, listW,
+               listBottom > listY ? listBottom - listY : 100, TRUE);
 
-    // 右侧按钮行
-    int btnX = margin + listWidth + margin;
-    int btnY = margin;
-    HWND btns[] = {GetDlgItem(hwnd_, IDC_BTN_NEW), GetDlgItem(hwnd_, IDC_BTN_BACKUP),
-                    GetDlgItem(hwnd_, IDC_BTN_RESTORE), GetDlgItem(hwnd_, IDC_BTN_VERIFY),
-                    GetDlgItem(hwnd_, IDC_BTN_DELETE)};
-    for (HWND btn : btns) {
-        MoveWindow(btn, btnX, btnY, btnWidth, btnHeight, TRUE);
-        btnX += btnWidth + 4;
+    // 右侧内容
+    const int rightX = margin + listW + gap;
+    const int rightW = (width - rightX - margin) > 0 ? (width - rightX - margin) : 100;
+
+    // 按钮行（均匀分布，防溢出）
+    const int btnCount = 6;
+    const int btnGap = 8;
+    const int totalBtnW = btnCount * btnW + (btnCount - 1) * btnGap;
+    int btnX = rightX;
+    // 如果按钮总宽超过右侧宽度，缩小按钮宽度
+    int actualBtnW = btnW;
+    if (totalBtnW > rightW) {
+        actualBtnW = (rightW - (btnCount - 1) * btnGap) / btnCount;
+        if (actualBtnW < 60) actualBtnW = 60;
+    }
+    const int btnY = kHeaderHeight + margin + 2;
+    const int ids[] = {IDC_BTN_NEW, IDC_BTN_BACKUP, IDC_BTN_RESTORE,
+                       IDC_BTN_VERIFY, IDC_BTN_DELETE, IDC_BTN_CANCEL};
+    for (int id : ids) {
+        HWND btn = GetDlgItem(hwnd_, id);
+        MoveWindow(btn, btnX, btnY, actualBtnW, btnH, TRUE);
+        btnX += actualBtnW + btnGap;
     }
 
-    // 日志区（按钮下方）
-    int logY = btnY + btnHeight + margin;
-    int logHeight = height - logY - progressHeight - statusHeight - margin * 2;
-    MoveWindow(logBox_, margin + listWidth + margin, logY,
-               width - listWidth - margin * 3, logHeight, TRUE);
+    // 日志标签 + 日志框
+    const int logLabelY = btnY + btnH + gap + 6;
+    MoveWindow(logLabel_, rightX, logLabelY, rightW, 20, TRUE);
+    const int logY = logLabelY + 26;
+    const int logBottom = progressY - margin;
+    MoveWindow(logBox_, rightX, logY, rightW,
+               logBottom > logY ? logBottom - logY : 100, TRUE);
 
-    // 进度条
-    int progY = logY + logHeight + margin;
-    MoveWindow(progressBar_, margin + listWidth + margin, progY,
-               width - listWidth - margin * 3, progressHeight, TRUE);
-
-    // 状态栏
-    int statY = progY + progressHeight + 2;
-    MoveWindow(statusLabel_, margin + listWidth + margin, statY,
-               width - listWidth - margin * 3, statusHeight, TRUE);
+    // 进度条与状态
+    MoveWindow(progressBar_, rightX, progressY, rightW, progressH, TRUE);
+    MoveWindow(statusLabel_, rightX, progressY + progressH + 6,
+               rightW, statusH, TRUE);
 }
 
 // ============ 任务管理 ============

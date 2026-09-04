@@ -25,6 +25,10 @@ enum ControlId : int {
     IDC_LOG = 1008,
     IDC_PROGRESS = 1009,
     IDC_STATUS = 1010,
+    IDC_TITLE = 1101,
+    IDC_SUBTITLE = 1102,
+    IDC_LIST_LABEL = 1103,
+    IDC_LOG_LABEL = 1104,
 };
 
 // 自定义消息（后台线程 -> UI 线程）
@@ -55,6 +59,19 @@ private:
     HWND logBox_ = nullptr;
     HWND progressBar_ = nullptr;
     HWND statusLabel_ = nullptr;
+    HWND titleLabel_ = nullptr;
+    HWND subtitleLabel_ = nullptr;
+    HWND listLabel_ = nullptr;
+    HWND logLabel_ = nullptr;
+
+    // 字体与画刷（create 中创建，析构释放）
+    HFONT titleFont_ = nullptr;
+    HFONT subtitleFont_ = nullptr;
+    HFONT normalFont_ = nullptr;
+    HFONT fixedFont_ = nullptr;
+    HBRUSH headerBrush_ = nullptr;
+    HBRUSH panelBrush_ = nullptr;
+    HBRUSH borderBrush_ = nullptr;
 
     // 任务数据
     std::vector<BackupTask> tasks_;
