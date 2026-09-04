@@ -311,7 +311,7 @@ void MainWindow::onRestore() {
     if (selectedIndex_ < 0) { MessageBoxW(hwnd_, L"请先选择一个任务。", L"提示", MB_OK); return; }
 
     std::wstring restorePath;
-    if (!showInputDialog(L"恢复备份", L"请输入恢复目标目录:", L"D:\\Restored", restorePath)) return;
+    if (!showInputDialog(L"恢复备份", L"请输入恢复目标目录:", L"", restorePath)) return;
 
     const auto& task = tasks_[selectedIndex_];
     setBusy(true);
