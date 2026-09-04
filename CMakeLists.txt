@@ -117,6 +117,7 @@ target_link_libraries(backupapp PRIVATE backup_core backup_flags)
 enable_testing()
 add_executable(backup_tests
     tests/TestMain.cpp
+    tests/TimeUtilTest.cpp
     tests/HashCalculatorTest.cpp
     tests/ManifestTest.cpp
     tests/FileComparatorTest.cpp
