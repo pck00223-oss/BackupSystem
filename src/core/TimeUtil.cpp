@@ -54,4 +54,15 @@ std::string currentHHMM() {
     return buf;
 }
 
+bool parseHHMM(const std::wstring& s, int& hour, int& minute) {
+    if (s.size() != 5 || s[2] != L':') return false;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (i == 2) continue;
+        if (s[i] < L'0' || s[i] > L'9') return false;
+    }
+    hour = (s[0] - L'0') * 10 + (s[1] - L'0');
+    minute = (s[3] - L'0') * 10 + (s[4] - L'0');
+    return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+}
+
 }  // namespace backup

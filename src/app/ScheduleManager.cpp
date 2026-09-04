@@ -7,6 +7,7 @@
 
 #include <windows.h>
 
+#include "core/TimeUtil.h"
 #include "core/Utf.h"
 #include "engine/FileSystem.h"
 
@@ -102,18 +103,6 @@ std::wstring pad2(int v) {
     return (v < 10 ? L"0" : L"") + std::to_wstring(v);
 }
 
-// 校验 HH:MM 格式，返回 true 表示合法，hour/minute 输出解析结果
-bool parseTimeHHMM(const std::wstring& time, int& hour, int& minute) {
-    if (time.size() != 5 || time[2] != L':') return false;
-    for (size_t i = 0; i < time.size(); ++i) {
-        if (i == 2) continue;
-        if (time[i] < L'0' || time[i] > L'9') return false;
-    }
-    hour = std::stoi(time.substr(0, 2));
-    minute = std::stoi(time.substr(3, 2));
-    return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
-}
-
 // 生成任务计划 XML
 // StartBoundary 直接用今天的日期（即使已过触发时间，Windows 也会从下一个周期开始执行），
 // 避免手动 wDay+=1 导致月末/年末非法日期。
@@ -124,7 +113,7 @@ std::wstring buildTaskXml(const std::wstring& executable,
     SYSTEMTIME st = {};
     GetLocalTime(&st);
     int hour = 20, minute = 0;
-    parseTimeHHMM(time, hour, minute);  // 调用方已校验，此处仅解析
+    parseHHMM(time, hour, minute);  // 调用方已校验，此处仅解析
 
     const std::wstring boundary =
         std::to_wstring(st.wYear) + L"-" + pad2(st.wMonth) + L"-" + pad2(st.wDay) +
@@ -188,7 +177,7 @@ bool ScheduleManager::registerDaily(const std::wstring& taskName,
         return false;
     }
     int hour = 0, minute = 0;
-    if (!parseTimeHHMM(time, hour, minute)) {
+    if (!parseHHMM(time, hour, minute)) {
         if (errMsg) *errMsg = "invalid time format (expected HH:MM, 00:00-23:59): " + wideToUtf8(time);
         return false;
     }

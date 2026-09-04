@@ -19,4 +19,8 @@ std::string dateToday();
 // 当前 "HH:MM"（调度比对用）
 std::string currentHHMM();
 
+// 校验并解析 "HH:MM" 格式（00:00-23:59）。
+// 成功返回 true，hour/minute 输出解析结果；格式非法或范围越界返回 false。
+bool parseHHMM(const std::wstring& s, int& hour, int& minute);
+
 }  // namespace backup

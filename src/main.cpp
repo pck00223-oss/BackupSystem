@@ -172,20 +172,8 @@ int cmdBackup(const std::vector<std::wstring>& args) {
     // 长期自用推荐用 schedule --register 注册 Windows 计划任务。
     if (!config.scheduleTime.empty()) {
         // 校验时间格式 HH:MM（00:00-23:59），非法则报错退出
-        const std::wstring& st = config.scheduleTime;
-        bool timeValid = (st.size() == 5 && st[2] == L':');
-        if (timeValid) {
-            for (size_t i = 0; i < st.size(); ++i) {
-                if (i == 2) continue;
-                if (st[i] < L'0' || st[i] > L'9') { timeValid = false; break; }
-            }
-        }
-        if (timeValid) {
-            const int h = std::stoi(st.substr(0, 2));
-            const int m = std::stoi(st.substr(3, 2));
-            if (h < 0 || h > 23 || m < 0 || m > 59) timeValid = false;
-        }
-        if (!timeValid) {
+        int schedHour = 0, schedMinute = 0;
+        if (!parseHHMM(config.scheduleTime, schedHour, schedMinute)) {
             std::cout << "错误：--schedule 时间格式应为 HH:MM（00:00-23:59），当前: "
                       << wideToUtf8(config.scheduleTime) << "\n";
             return 1;
@@ -321,24 +309,10 @@ int cmdSchedule(const std::vector<std::wstring>& args) {
         }
 
         // 校验时间格式 HH:MM（00:00-23:59）
-        if (time.size() != 5 || time[2] != L':') {
-            std::cout << "错误：--time 格式应为 HH:MM（如 20:00），当前: " << wideToUtf8(time) << "\n";
+        int timeHour = 0, timeMinute = 0;
+        if (!parseHHMM(time, timeHour, timeMinute)) {
+            std::cout << "错误：--time 格式应为 HH:MM（00:00-23:59），当前: " << wideToUtf8(time) << "\n";
             return 1;
-        }
-        for (size_t i = 0; i < time.size(); ++i) {
-            if (i == 2) continue;
-            if (time[i] < L'0' || time[i] > L'9') {
-                std::cout << "错误：--time 格式应为 HH:MM（如 20:00），当前: " << wideToUtf8(time) << "\n";
-                return 1;
-            }
-        }
-        {
-            const int h = std::stoi(time.substr(0, 2));
-            const int m = std::stoi(time.substr(3, 2));
-            if (h < 0 || h > 23 || m < 0 || m > 59) {
-                std::cout << "错误：--time 范围应为 00:00-23:59，当前: " << wideToUtf8(time) << "\n";
-                return 1;
-            }
         }
 
         // 校验任务名：只允许字母、数字、中文、下划线、连字符、空格、点号
