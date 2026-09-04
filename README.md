@@ -10,7 +10,8 @@
 | 全量备份 | ✅ 已完成 | 首次备份全部文件（含空目录） |
 | 增量备份 | ✅ 已完成 | 元数据快速判断 + Hash 二次确认（两级变更检测，100ns 精度时间） |
 | 数据恢复 | ✅ 已完成 | 恢复后 Hash 校验 + 元数据（修改时间），冲突跳过记为警告 |
-| 完整性校验 | ✅ 已完成 | `verify` 子命令：按 Manifest 校验 data/ 仓库，报告缺失/损坏 |
+| 完整性校验 | ✅ 已完成 | `verify` 子命令：按 Manifest 校验 data/ 仓库，报告缺失/损坏；`--repair` 可自动用源文件重建损坏条目 |
+| 快照与时间点恢复 | ✅ 已完成 | `--keep-snapshots N` 保留最近 N 份完整快照（硬链接节省空间），`restore --snapshot <timestamp>` 从指定快照恢复，超过 N 份自动清理最旧 |
 | Manifest | ✅ 已完成 | 文本格式，可解释，UTF-8，原子写入，头部/数值/条目数校验 |
 | Hash 校验 | ✅ 已完成 | 自实现 SHA-256，无第三方依赖 |
 | 自定义筛选 | ✅ 已完成 | 扩展名 / 路径（目录段匹配）/ 大小 / 修改时间 / 空文件 |
@@ -95,14 +96,23 @@ build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full
 # 增量备份（第二次执行只处理变化文件）
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --type incremental
 
+# 保留最近 5 份快照（硬链接节省空间，超过 5 份自动清理最旧）
+build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full --keep-snapshots 5
+
 # 自定义筛选：只备份 .cpp/.h，最近 30 天修改，大于 1KB
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --include-ext .cpp,.h
 
 # 恢复：把备份恢复到 E:\Restored
 build\backupapp.exe restore --backup D:\Backup --to E:\Restored
 
+# 从指定快照恢复（时间点恢复，快照列表在 D:\Backup\snapshots\ 下）
+build\backupapp.exe restore --backup D:\Backup --to E:\Restored --snapshot 20260905-001128
+
 # 完整性校验：按 Manifest 检查 data/ 仓库是否有缺失或损坏
 build\backupapp.exe verify --backup D:\Backup
+
+# 完整性校验 + 自动修复：发现损坏/缺失时，用源目录文件重建（源文件 Hash 必须与 Manifest 一致）
+build\backupapp.exe verify --backup D:\Backup --repair --source D:\MyData
 
 # 注册为 Windows 计划任务（推荐长期自用）：每天 20:00 自动备份，完成后退出，无需程序常驻
 # 需要以管理员身份运行
@@ -130,6 +140,8 @@ build\backup_tests.exe
 ├── manifest.txt    最新一次备份的完整清单（增量检测 / 恢复 / 校验的数据基础）
 │                   原子写入（先写 .tmp 再 MoveFileEx 替换），失败/取消不覆盖
 ├── data/           文件数据（保持源相对目录结构，增量备份时删除的文件旧数据会被清理）
+├── snapshots/      快照目录（仅 --keep-snapshots N > 0 时创建）
+│   └── <timestamp>/  每份快照含独立的 manifest.txt 和 data/（未变化文件用硬链接节省空间）
 ├── history.log     历史执行记录（追加）
 └── logs/
     └── backup.log  运行日志

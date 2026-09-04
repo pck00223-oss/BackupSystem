@@ -32,6 +32,12 @@ inline void writeFile(const std::wstring& path, const std::string& content) {
     ofs.flush();
 }
 
+inline std::string readFile(const std::wstring& path) {
+    std::ifstream ifs(path.c_str(), std::ios::binary);
+    if (!ifs) return std::string();
+    return std::string((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+}
+
 inline void removeAll(const std::wstring& path) {
     if (!backup::FileSystem::exists(path)) return;
     if (backup::FileSystem::isDirectory(path)) {

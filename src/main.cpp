@@ -84,9 +84,11 @@ void printHelp() {
         "      --type full|incremental   备份模式（默认全量）\n"
         "      --include-ext .cpp,.h     仅备份这些扩展名\n"
         "      --exclude-ext .tmp,.log   排除这些扩展名\n"
+        "      --keep-snapshots N        保留最近 N 份完整快照（0=不保留，默认0）\n"
         "      --schedule HH:MM          程序常驻定时备份（不推荐长期自用）\n"
         "      --config <file>           配置文件（默认 config/default.conf）\n"
-        "  backupapp restore --backup <dir> --to <dir> [--overwrite]\n"
+        "  backupapp restore --backup <dir> --to <dir> [--overwrite] [--snapshot <timestamp>]\n"
+        "      --snapshot <timestamp>    从指定快照恢复（不指定则从最新恢复）\n"
         "  backupapp verify  --backup <dir> [--repair --source <dir>]\n"
         "      --repair --source <dir>  发现损坏/缺失时用源文件自动重建\n"
         "  backupapp history --target <dir>\n"
@@ -155,6 +157,18 @@ int cmdBackup(const std::vector<std::wstring>& args) {
     const std::wstring exc = getArg(args, L"--exclude-ext");
     if (!exc.empty()) config.filter.excludeExtensions = splitExtList(exc);
 
+    // 保留最近 N 份快照（0=不保留，单镜像模式）
+    const std::wstring keepSnap = getArg(args, L"--keep-snapshots");
+    if (!keepSnap.empty()) {
+        try {
+            const int n = std::stoi(keepSnap);
+            if (n >= 0) config.keepSnapshots = n;
+        } catch (...) {
+            std::cout << "错误：--keep-snapshots 应为非负整数，当前: " << wideToUtf8(keepSnap) << "\n";
+            return 1;
+        }
+    }
+
     for (const auto& w : warnings) std::cout << "  [配置] " << wideToUtf8(w) << "\n";
 
     if (config.sourcePath.empty() || config.targetPath.empty()) {
@@ -217,6 +231,7 @@ int cmdRestore(const std::vector<std::wstring>& args) {
     config.backupRoot = backupRoot;
     config.restorePath = restoreTo;
     config.overwrite = hasArg(args, L"--overwrite");
+    config.snapshot = getArg(args, L"--snapshot");  // 空=从最新恢复，非空=从指定快照恢复
 
     FileSystem::createDirectories(backupRoot + L"\\logs");
     Logger::instance().init(backupRoot + L"\\logs\\backup.log");

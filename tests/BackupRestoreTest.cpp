@@ -7,6 +7,7 @@
 #include "business/BackupManager.h"
 #include "business/Manifest.h"
 #include "business/RestoreManager.h"
+#include "business/SnapshotManager.h"
 #include "business/VerifyManager.h"
 #include "app/TaskScheduler.h"
 #include "core/BackupLock.h"
@@ -684,6 +685,75 @@ TEST(CrashRecovery_NoManifest_NoAutoDelete) {
     BackupResult r3 = BackupManager::run(cfg);
     CHECK(r3.success);
     CHECK(!FileSystem::exists(residual));
+}
+
+// 快照功能测试：保留最近 N 份快照 + 时间点恢复 + 自动清理
+TEST(Snapshot_KeepNAndRestoreFromSnapshot) {
+    TestEnv env;
+    testutil::writeFile(env.src + L"a.txt", "v1");
+    testutil::writeFile(env.src + L"b.txt", "unchanged");
+
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+    cfg.keepSnapshots = 2;
+
+    // 第1次备份
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+    std::vector<SnapshotInfo> snaps1 = SnapshotManager::listSnapshots(env.target);
+    CHECK(snaps1.size() == 1);
+
+    // 修改 a.txt，第2次备份（增量）
+    testutil::writeFile(env.src + L"a.txt", "v2");
+    cfg.mode = BackupMode::Incremental;
+    BackupResult r2 = BackupManager::run(cfg);
+    CHECK(r2.success);
+    std::vector<SnapshotInfo> snaps2 = SnapshotManager::listSnapshots(env.target);
+    CHECK(snaps2.size() == 2);
+
+    // 再修改 a.txt，第3次备份（应自动清理最旧的1份）
+    testutil::writeFile(env.src + L"a.txt", "v3");
+    BackupResult r3 = BackupManager::run(cfg);
+    CHECK(r3.success);
+    std::vector<SnapshotInfo> snaps3 = SnapshotManager::listSnapshots(env.target);
+    CHECK(snaps3.size() == 2);  // 保留最近2份
+
+    // 从第1个（最旧的）快照恢复，a.txt 应为 v2（v1已被清理）
+    RestoreConfig rcfg;
+    rcfg.backupRoot = env.target;
+    rcfg.restorePath = env.target + L"\\restore_old";
+    rcfg.overwrite = true;
+    rcfg.snapshot = snaps3[0].timestamp;
+    RestoreResult rr1 = RestoreManager::run(rcfg);
+    CHECK(rr1.success);
+    std::string content1 = testutil::readFile(rcfg.restorePath + L"\\a.txt");
+    CHECK(content1 == "v2");
+
+    // 从最新（不指定 snapshot）恢复，a.txt 应为 v3
+    rcfg.restorePath = env.target + L"\\restore_new";
+    rcfg.snapshot.clear();
+    RestoreResult rr2 = RestoreManager::run(rcfg);
+    CHECK(rr2.success);
+    std::string content2 = testutil::readFile(rcfg.restorePath + L"\\a.txt");
+    CHECK(content2 == "v3");
+}
+
+// 快照功能测试：不保留快照时（keepSnapshots=0）不创建 snapshots 目录
+TEST(Snapshot_Disabled_NoSnapshotsDir) {
+    TestEnv env;
+    testutil::writeFile(env.src + L"a.txt", "v1");
+
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+    cfg.keepSnapshots = 0;
+
+    BackupResult r = BackupManager::run(cfg);
+    CHECK(r.success);
+    CHECK(!FileSystem::exists(env.target + L"\\snapshots"));
 }
 
 // 回归测试：verify --repair 自动修复损坏文件

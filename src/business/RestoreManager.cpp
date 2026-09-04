@@ -3,6 +3,7 @@
 #include "business/RestoreManager.h"
 
 #include "business/Manifest.h"
+#include "business/SnapshotManager.h"
 #include "core/HashCalculator.h"
 #include "core/Logger.h"
 #include "core/TimeUtil.h"
@@ -23,7 +24,22 @@ RestoreResult RestoreManager::run(const RestoreConfig& config,
     Logger& log = Logger::instance();
     log.info(L"RestoreManager", L"恢复开始");
 
-    const std::wstring manifestPath = config.backupRoot + L"\\manifest.txt";
+    // 如果指定了快照时间戳，从快照目录读取 manifest 和 data；否则从根目录读取。
+    std::wstring effectiveRoot = config.backupRoot;
+    if (!config.snapshot.empty()) {
+        const std::wstring snapDir = SnapshotManager::snapshotDir(config.backupRoot, config.snapshot);
+        if (!FileSystem::exists(snapDir)) {
+            res.success = false;
+            res.errors.push_back(std::wstring(L"指定的快照不存在: ") + config.snapshot);
+            log.error(L"RestoreManager", L"指定的快照不存在: " + config.snapshot);
+            res.endTime = formatNowWide();
+            return res;
+        }
+        effectiveRoot = snapDir;
+        log.info(L"RestoreManager", L"从快照恢复: " + config.snapshot);
+    }
+
+    const std::wstring manifestPath = effectiveRoot + L"\\manifest.txt";
     Manifest manifest;
     std::string err;
     if (!manifest.loadFromFile(manifestPath, &err)) {
@@ -42,7 +58,7 @@ RestoreResult RestoreManager::run(const RestoreConfig& config,
         return res;
     }
 
-    const std::wstring dataDir = config.backupRoot + L"\\data";
+    const std::wstring dataDir = effectiveRoot + L"\\data";
     log.info(L"RestoreManager",
              L"Manifest 包含 " + std::to_wstring(manifest.entries.size()) + L" 个条目, 源=" +
                  manifest.meta.sourcePath);

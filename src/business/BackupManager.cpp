@@ -10,6 +10,7 @@
 #include "business/FileComparator.h"
 #include "business/FileFilter.h"
 #include "business/Manifest.h"
+#include "business/SnapshotManager.h"
 #include "core/BackupLock.h"
 #include "core/HashCalculator.h"
 #include "core/Logger.h"
@@ -30,6 +31,67 @@ std::wstring BackupManager::dataDirOf(const std::wstring& target) {
 }
 std::wstring BackupManager::historyPathOf(const std::wstring& target) {
     return target + L"\\history.log";
+}
+
+// 从当前 data/ 和 manifest.txt 创建快照。
+// 未变化的文件用硬链接（节省空间），硬链接失败时回退到复制。
+static bool createSnapshotFromCurrent(const std::wstring& targetPath,
+                                       const SnapshotInfo& snap,
+                                       std::wstring& errMsg) {
+    const std::wstring srcData = targetPath + L"\\data";
+    const std::wstring dstData = snap.path + L"\\data";
+
+    if (!FileSystem::exists(srcData)) {
+        errMsg = L"data 目录不存在";
+        return false;
+    }
+
+    // 递归遍历 data/，对每个文件创建硬链接，对每个目录创建目录
+    std::vector<FileInfo> entries;
+    std::vector<std::wstring> scanErrors;
+    if (!FileScanner::scan(srcData, entries, scanErrors)) {
+        errMsg = L"扫描 data 目录失败";
+        return false;
+    }
+
+    for (const auto& e : entries) {
+        const std::wstring srcPath = srcData + L"\\" + e.relativePath;
+        const std::wstring dstPath = dstData + L"\\" + e.relativePath;
+
+        if (e.type == FileType::Directory) {
+            if (!FileSystem::createDirectories(dstPath)) {
+                errMsg = L"创建快照目录失败: " + e.relativePath;
+                return false;
+            }
+            continue;
+        }
+
+        // 确保父目录存在
+        const size_t lastSlash = e.relativePath.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos) {
+            FileSystem::createDirectories(dstData + L"\\" + e.relativePath.substr(0, lastSlash));
+        }
+
+        // 尝试硬链接（同卷 NTFS 支持，节省空间）
+        if (!::CreateHardLinkW(dstPath.c_str(), srcPath.c_str(), nullptr)) {
+            // 硬链接失败（跨卷/FAT/权限），回退到复制
+            std::string copyErr;
+            if (!FileCopier::copyFile(srcPath, dstPath, &copyErr, nullptr)) {
+                errMsg = L"复制快照文件失败: " + e.relativePath + L" (" + utf8ToWide(copyErr) + L")";
+                return false;
+            }
+        }
+    }
+
+    // 复制 manifest.txt 到快照目录
+    const std::wstring srcManifest = targetPath + L"\\manifest.txt";
+    const std::wstring dstManifest = snap.path + L"\\manifest.txt";
+    std::string manifestCopyErr;
+    if (!FileCopier::copyFile(srcManifest, dstManifest, &manifestCopyErr, nullptr)) {
+        errMsg = L"复制 manifest 到快照失败: " + utf8ToWide(manifestCopyErr);
+        return false;
+    }
+    return true;
 }
 
 void BackupManager::appendHistory(const std::wstring& target, const BackupResult& res) {
@@ -370,6 +432,21 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         }
     }
     stagedPaths.clear();
+
+    // ---- 8.5 快照：保留最近 N 份完整快照 ----
+    if (config.keepSnapshots > 0) {
+        SnapshotInfo snap = SnapshotManager::createSnapshot(config.targetPath);
+        std::wstring snapErr;
+        if (createSnapshotFromCurrent(config.targetPath, snap, snapErr)) {
+            const int cleaned = SnapshotManager::cleanupOldSnapshots(config.targetPath, config.keepSnapshots);
+            log.info(L"BackupManager", L"已创建快照 " + snap.timestamp +
+                     (cleaned > 0 ? L"，清理旧快照 " + std::to_wstring(cleaned) + L" 份" : L""));
+        } else {
+            log.warn(L"BackupManager", L"创建快照失败: " + snapErr);
+            // 快照失败不影响备份结果，清理空快照目录
+            FileSystem::removeAll(snap.path);
+        }
+    }
 
     // 增量备份：清理 data/ 里已删除文件的旧数据，避免长期占空间
     if (incremental) {
