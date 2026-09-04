@@ -87,7 +87,8 @@ void printHelp() {
         "      --schedule HH:MM          程序常驻定时备份（不推荐长期自用）\n"
         "      --config <file>           配置文件（默认 config/default.conf）\n"
         "  backupapp restore --backup <dir> --to <dir> [--overwrite]\n"
-        "  backupapp verify  --backup <dir>\n"
+        "  backupapp verify  --backup <dir> [--repair --source <dir>]\n"
+        "      --repair --source <dir>  发现损坏/缺失时用源文件自动重建\n"
         "  backupapp history --target <dir>\n"
         "  backupapp schedule --register --time HH:MM --source <dir> --target <dir> [--type full|inc] [--name <task>]\n"
         "      注册为 Windows 计划任务，到点自动备份后退出（推荐长期自用）\n"
@@ -251,10 +252,20 @@ int cmdVerify(const std::vector<std::wstring>& args) {
     std::cout << "========== 完整性校验 ==========\n";
     std::cout << "备份目录 : " << wideToUtf8(backupRoot) << "\n";
 
-    VerifyManager::Options vopts;
+    VerifyOptions vopts;
     vopts.progress = [](const std::wstring& rel) {
         std::cout << "  校验中: " << wideToUtf8(rel) << "\r";
     };
+    // --repair：发现损坏/缺失时，用源目录文件自动重建
+    vopts.repair = hasArg(args, L"--repair");
+    vopts.sourcePath = getArg(args, L"--source");
+    if (vopts.repair && vopts.sourcePath.empty()) {
+        std::cout << "错误：--repair 需要同时指定 --source <源目录>\n";
+        return 1;
+    }
+    if (vopts.repair) {
+        std::cout << "修复模式 : 开启 (源目录: " << wideToUtf8(vopts.sourcePath) << ")\n";
+    }
     const VerifyResult res = VerifyManager::run(backupRoot, vopts);
     std::cout << "                                        \r";
 
@@ -262,6 +273,7 @@ int cmdVerify(const std::vector<std::wstring>& args) {
     std::cout << "通过     : " << res.passed << "\n";
     std::cout << "缺失     : " << res.missing << "\n";
     std::cout << "损坏     : " << res.corrupted << "\n";
+    if (res.repaired > 0) std::cout << "已修复   : " << res.repaired << "\n";
     std::cout << "跳过     : " << res.skipped << " (目录/符号链接)\n";
     std::cout << "残留     : " << res.residual << " (.baktmp/.baktmp.old)\n";
     std::cout << "状态     : " << (res.success ? "完整" : "不完整") << "\n";

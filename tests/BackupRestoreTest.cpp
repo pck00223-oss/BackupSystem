@@ -686,6 +686,51 @@ TEST(CrashRecovery_NoManifest_NoAutoDelete) {
     CHECK(!FileSystem::exists(residual));
 }
 
+// 回归测试：verify --repair 自动修复损坏文件
+TEST(Verify_Repair_CorruptedFile_RebuiltFromSource) {
+    TestEnv env;
+    testutil::writeFile(env.src + L"a.txt", "original content");
+    testutil::writeFile(env.src + L"b.txt", "another file");
+
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    // 全量备份
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+
+    // 手动损坏 a.txt 的备份数据
+    testutil::writeFile(env.target + L"\\data\\a.txt", "corrupted!!!");
+
+    // 不带 --repair 的 verify：应报告损坏
+    VerifyResult v1 = VerifyManager::run(env.target);
+    CHECK(!v1.success);
+    CHECK(v1.corrupted == 1);
+
+    // 带 --repair 的 verify：应自动修复
+    VerifyOptions vopts;
+    vopts.repair = true;
+    vopts.sourcePath = env.src;
+    VerifyResult v2 = VerifyManager::run(env.target, vopts);
+    CHECK(v2.success);
+    CHECK(v2.repaired == 1);
+    CHECK(v2.corrupted == 0);
+
+    // 验证文件已被修复
+    std::string hash;
+    HashCalculator::fileSha256(env.target + L"\\data\\a.txt", hash);
+    std::string srcHash;
+    HashCalculator::fileSha256(env.src + L"\\a.txt", srcHash);
+    CHECK(hash == srcHash);
+
+    // 再次不带 --repair 的 verify：应完整
+    VerifyResult v3 = VerifyManager::run(env.target);
+    CHECK(v3.success);
+    CHECK(v3.corrupted == 0);
+}
+
 // 回归测试：单一实例锁 - 并发备份被拒绝，崩溃残留锁自动清理
 TEST(BackupLock_ConcurrentBackup_Rejected) {
     TestEnv env;
@@ -798,7 +843,7 @@ TEST(Verify_CancelCheck_Aborts) {
     CHECK(r1.success);
 
     // verify 时 cancelCheck 始终返回 true
-    VerifyManager::Options vopts;
+    VerifyOptions vopts;
     vopts.cancelCheck = []() { return true; };
     VerifyResult vr = VerifyManager::run(env.target, vopts);
     CHECK(!vr.success);
