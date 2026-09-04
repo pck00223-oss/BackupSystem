@@ -17,6 +17,7 @@
 #include "app/TaskScheduler.h"
 #include "business/BackupManager.h"
 #include "business/RestoreManager.h"
+#include "business/SnapshotManager.h"
 #include "business/VerifyManager.h"
 #include "core/BackupLock.h"
 #include "core/Logger.h"
@@ -91,6 +92,8 @@ void printHelp() {
         "  backupapp restore --backup <dir> --to <dir> [--overwrite] [--snapshot <timestamp>]\n"
         "      --snapshot <timestamp>    从指定快照恢复（不指定则从最新恢复）\n"
         "  backupapp verify  --backup <dir> [--repair --source <dir>]\n"
+        "  backupapp verify  --backup <dir> --snapshot <timestamp>  只校验指定快照\n"
+        "  backupapp verify  --backup <dir> --all-snapshots         校验所有保留快照\n"
         "      --repair --source <dir>  发现损坏/缺失时用源文件自动重建\n"
         "  backupapp history --target <dir>\n"
         "  backupapp schedule --register --time HH:MM --source <dir> --target <dir> [--type full|inc] [--name <task>]\n"
@@ -262,10 +265,42 @@ int cmdHistory(const std::vector<std::wstring>& args) {
     return 0;
 }
 
+// 打印单次 verify 的统计字段。
+void printVerifyFields(const VerifyResult& res) {
+    std::cout << "文件总数 : " << res.total << "\n";
+    std::cout << "通过     : " << res.passed << "\n";
+    std::cout << "缺失     : " << res.missing << "\n";
+    std::cout << "损坏     : " << res.corrupted << "\n";
+    if (res.repaired > 0) std::cout << "已修复   : " << res.repaired << "\n";
+    std::cout << "跳过     : " << res.skipped << " (目录/符号链接)\n";
+    std::cout << "残留     : " << res.residual << " (.baktmp/.baktmp.old)\n";
+    std::cout << "状态     : " << (res.success ? "完整" : "不完整") << "\n";
+    for (const auto& e : res.repairedDetails) std::cout << "  " << wideToUtf8(e) << "\n";
+    for (const auto& e : res.errors) std::cout << "  " << wideToUtf8(e) << "\n";
+}
+
 int cmdVerify(const std::vector<std::wstring>& args) {
     const std::wstring backupRoot = getArg(args, L"--backup");
     if (backupRoot.empty()) {
         std::cout << "错误：verify 需要 --backup <备份目录>\n";
+        return 1;
+    }
+
+    const std::wstring snapshotArg = getArg(args, L"--snapshot");
+    const bool allSnapshots = hasArg(args, L"--all-snapshots");
+    const bool repair = hasArg(args, L"--repair");
+    const std::wstring sourcePath = getArg(args, L"--source");
+
+    if (!snapshotArg.empty() && allSnapshots) {
+        std::cout << "错误：--snapshot 与 --all-snapshots 不能同时使用\n";
+        return 1;
+    }
+    if (repair && (!snapshotArg.empty() || allSnapshots)) {
+        std::cout << "错误：快照校验为只读，不支持 --repair（快照属于历史状态，不允许被当前源文件改写）\n";
+        return 1;
+    }
+    if (repair && sourcePath.empty()) {
+        std::cout << "错误：--repair 需要同时指定 --source <源目录>\n";
         return 1;
     }
 
@@ -276,13 +311,74 @@ int cmdVerify(const std::vector<std::wstring>& args) {
     vopts.progress = [](const std::wstring& rel) {
         std::cout << "  校验中: " << wideToUtf8(rel) << "\r";
     };
-    // --repair：发现损坏/缺失时，用源目录文件自动重建
-    vopts.repair = hasArg(args, L"--repair");
-    vopts.sourcePath = getArg(args, L"--source");
-    if (vopts.repair && vopts.sourcePath.empty()) {
-        std::cout << "错误：--repair 需要同时指定 --source <源目录>\n";
-        return 1;
+
+    // ---- 校验指定快照 ----
+    if (!snapshotArg.empty()) {
+        const std::wstring snapDir = SnapshotManager::snapshotDir(backupRoot, snapshotArg);
+        if (!FileSystem::exists(snapDir)) {
+            std::cout << "错误：指定的快照不存在: " << wideToUtf8(snapshotArg) << "\n";
+            return 1;
+        }
+        std::cout << "校验范围 : 指定快照\n";
+        std::cout << "快照     : " << wideToUtf8(snapshotArg) << "\n";
+        const VerifyResult res = VerifyManager::run(snapDir, vopts);
+        std::cout << "                                        \r";
+        printVerifyFields(res);
+        std::cout << "================================\n";
+        return res.success ? 0 : 1;
     }
+
+    // ---- 校验所有快照 ----
+    if (allSnapshots) {
+        const std::vector<SnapshotInfo> snaps = SnapshotManager::listSnapshots(backupRoot);
+        if (snaps.empty()) {
+            std::cout << "校验范围 : 所有快照 (0 份)\n";
+            std::cout << "没有可校验的快照\n";
+            std::cout << "================================\n";
+            return 0;
+        }
+
+        std::cout << "校验范围 : 所有快照 (" << snaps.size() << " 份)\n";
+        bool allOk = true;
+        uint64_t totalFiles = 0, totalPassed = 0, totalMissing = 0;
+        uint64_t totalCorrupted = 0, totalResidual = 0, totalSkipped = 0;
+
+        for (const auto& s : snaps) {
+            const VerifyResult res = VerifyManager::run(s.path, vopts);
+            std::cout << "                                        \r";
+            std::cout << "快照     : " << wideToUtf8(s.timestamp)
+                      << "  文件 " << res.total
+                      << " 通过 " << res.passed
+                      << " 缺失 " << res.missing
+                      << " 损坏 " << res.corrupted;
+            if (res.residual > 0) std::cout << " 残留 " << res.residual;
+            std::cout << (res.success ? "  [完整]" : "  [不完整]") << "\n";
+            for (const auto& e : res.errors) {
+                std::cout << "    " << wideToUtf8(e) << "\n";
+            }
+            totalFiles += res.total;
+            totalPassed += res.passed;
+            totalMissing += res.missing;
+            totalCorrupted += res.corrupted;
+            totalResidual += res.residual;
+            totalSkipped += res.skipped;
+            allOk = allOk && res.success;
+        }
+
+        std::cout << "总计     : 文件 " << totalFiles
+                  << " 通过 " << totalPassed
+                  << " 缺失 " << totalMissing
+                  << " 损坏 " << totalCorrupted
+                  << " 跳过 " << totalSkipped
+                  << " 残留 " << totalResidual << "\n";
+        std::cout << "状态     : " << (allOk ? "完整" : "不完整") << "\n";
+        std::cout << "================================\n";
+        return allOk ? 0 : 1;
+    }
+
+    // ---- 校验根目录（默认）----
+    vopts.repair = repair;
+    vopts.sourcePath = sourcePath;
     if (vopts.repair) {
         std::cout << "修复模式 : 开启 (源目录: " << wideToUtf8(vopts.sourcePath) << ")\n";
     }
@@ -300,17 +396,7 @@ int cmdVerify(const std::vector<std::wstring>& args) {
 
     const VerifyResult res = VerifyManager::run(backupRoot, vopts);
     std::cout << "                                        \r";
-
-    std::cout << "文件总数 : " << res.total << "\n";
-    std::cout << "通过     : " << res.passed << "\n";
-    std::cout << "缺失     : " << res.missing << "\n";
-    std::cout << "损坏     : " << res.corrupted << "\n";
-    if (res.repaired > 0) std::cout << "已修复   : " << res.repaired << "\n";
-    std::cout << "跳过     : " << res.skipped << " (目录/符号链接)\n";
-    std::cout << "残留     : " << res.residual << " (.baktmp/.baktmp.old)\n";
-    std::cout << "状态     : " << (res.success ? "完整" : "不完整") << "\n";
-    for (const auto& e : res.repairedDetails) std::cout << "  " << wideToUtf8(e) << "\n";
-    for (const auto& e : res.errors) std::cout << "  " << wideToUtf8(e) << "\n";
+    printVerifyFields(res);
     std::cout << "================================\n";
     return res.success ? 0 : 1;
 }

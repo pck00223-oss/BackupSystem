@@ -113,8 +113,11 @@ build\backupapp.exe restore --backup D:\Backup --to E:\Restored --snapshot 20260
 build\backupapp.exe verify --backup D:\Backup
 
 # 完整性校验 + 自动修复：发现损坏/缺失时，用源目录文件重建（源文件 Hash 必须与 Manifest 一致）
-# 注意：当前 verify 只校验根目录 data/，不逐份校验 snapshots/*/data（快照数据完整性在恢复时校验）
 build\backupapp.exe verify --backup D:\Backup --repair --source D:\MyData
+
+# 只校验指定快照 / 校验所有保留快照（快照只读，不支持 --repair）
+build\backupapp.exe verify --backup D:\Backup --snapshot 20260905-001128
+build\backupapp.exe verify --backup D:\Backup --all-snapshots
 
 # 注册为 Windows 计划任务（推荐长期自用）：每天 20:00 自动备份，完成后退出，无需程序常驻
 # 需要以管理员身份运行

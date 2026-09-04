@@ -793,6 +793,43 @@ TEST(Snapshot_DeletedFile_NotInNewSnapshotData) {
     CHECK(latestManifest.find(L"a.txt") != nullptr);
 }
 
+// 回归测试：verify 能逐份校验快照，损坏一份不影响其它快照判定
+TEST(Verify_Snapshot_CorruptionDetected) {
+    TestEnv env;
+    testutil::writeFile(env.src + L"a.txt", "v1");
+
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+    cfg.keepSnapshots = 2;
+
+    // 第1份快照（a.txt = v1）
+    CHECK(BackupManager::run(cfg).success);
+
+    // 修改 a.txt 后产生第2份快照（a.txt = v2，v1 只留在旧快照）
+    testutil::writeFile(env.src + L"a.txt", "v2");
+    cfg.mode = BackupMode::Incremental;
+    CHECK(BackupManager::run(cfg).success);
+
+    std::vector<SnapshotInfo> snaps = SnapshotManager::listSnapshots(env.target);
+    CHECK(snaps.size() == 2);
+
+    // 损坏旧快照中的 a.txt（先删除再写入，避免通过硬链接连累新快照/根目录）
+    const std::wstring oldSnapData = snaps[0].path + L"\\data\\a.txt";
+    CHECK(FileSystem::deleteFile(oldSnapData));
+    testutil::writeFile(oldSnapData, "corrupted v1");
+
+    VerifyResult bad = VerifyManager::run(snaps[0].path);
+    CHECK(!bad.success);
+    CHECK(bad.corrupted >= 1);
+
+    // 新快照不受影响，应完整
+    VerifyResult good = VerifyManager::run(snaps[1].path);
+    CHECK(good.success);
+    CHECK(good.corrupted == 0);
+}
+
 // 回归测试：verify --repair 自动修复损坏文件
 TEST(Verify_Repair_CorruptedFile_RebuiltFromSource) {
     TestEnv env;
