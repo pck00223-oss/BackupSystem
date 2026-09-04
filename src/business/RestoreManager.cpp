@@ -76,8 +76,9 @@ RestoreResult RestoreManager::run(const RestoreConfig& config,
             }
             if (!config.overwrite) {
                 ++res.skipped;
-                res.errors.push_back(std::wstring(L"目标文件已存在且内容不同, 已跳过: ") + rel +
-                                     L"（使用覆盖选项可替换）");
+                // 冲突不覆盖属于非致命警告，不放进 errors（避免成功结果里出现"错误"）
+                res.warnings.push_back(std::wstring(L"目标文件已存在且内容不同, 已跳过: ") + rel +
+                                       L"（使用覆盖选项可替换）");
                 continue;
             }
             // 覆盖模式不再先删后写：FileCopier 内部用临时文件+原子替换，

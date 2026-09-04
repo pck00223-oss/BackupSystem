@@ -23,7 +23,9 @@ struct FileInfo {
     std::wstring name;          // 文件名或目录名
     uint64_t size = 0;          // 字节数（目录为 0）
     uint64_t createdTime = 0;   // 创建时间（Unix 秒，扩展元数据）
-    uint64_t modifiedTime = 0;  // 修改时间（Unix 秒）
+    uint64_t modifiedTime = 0;  // 修改时间（Unix 秒，兼容字段）
+    uint64_t modifiedTime100ns = 0;  // 修改时间（Windows FILETIME，100ns 单位，从 1601 年起）
+                                       // 用于同秒内内容变化的精确检测（增量备份核心）
     FileType type = FileType::Unknown;
     std::string hash;           // 内容 SHA-256 十六进制（小写），未计算则为空
     bool hashed = false;        // 是否已计算 hash

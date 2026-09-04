@@ -111,6 +111,13 @@ bool FileSystem::getFileInfo(const std::wstring& path, FileInfo& out) {
     out.size = (static_cast<uint64_t>(fd.nFileSizeHigh) << 32) | fd.nFileSizeLow;
     out.createdTime = filetimeToUnixSeconds(fd.ftCreationTime);
     out.modifiedTime = filetimeToUnixSeconds(fd.ftLastWriteTime);
+    // 100ns 精度修改时间（FILETIME 本身就是 100ns 单位，从 1601 年起）
+    {
+        ULARGE_INTEGER ul;
+        ul.LowPart = fd.ftLastWriteTime.dwLowDateTime;
+        ul.HighPart = fd.ftLastWriteTime.dwHighDateTime;
+        out.modifiedTime100ns = ul.QuadPart;
+    }
     out.type = attributesToType(fd.dwFileAttributes);
     return true;
 }

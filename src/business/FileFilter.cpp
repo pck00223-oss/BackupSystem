@@ -25,6 +25,15 @@ bool listContains(const std::vector<std::wstring>& list, const std::wstring& val
                        [&value](const std::wstring& item) { return wcsicmpSafe(item, value) == 0; });
 }
 
+// 目录段前缀匹配：prefix 匹配 relativePath 的前缀，且 prefix 后是路径分隔符或完全相等。
+// 防止 exclude_path=doc 误排除 documents\重要文件。
+bool pathStartsWithSegment(const std::wstring& relativePath, const std::wstring& prefix) {
+    if (!startsWithNoCase(relativePath, prefix)) return false;
+    if (relativePath.size() == prefix.size()) return true;
+    const wchar_t next = relativePath[prefix.size()];
+    return next == L'\\' || next == L'/';
+}
+
 }  // namespace
 
 bool FilterRule::isMatch(const FileInfo& info) const {
@@ -38,11 +47,11 @@ bool FilterRule::isMatch(const FileInfo& info) const {
     if (!includeSubPaths.empty()) {
         const bool matched = std::any_of(
             includeSubPaths.begin(), includeSubPaths.end(),
-            [&info](const std::wstring& p) { return startsWithNoCase(info.relativePath, p); });
+            [&info](const std::wstring& p) { return pathStartsWithSegment(info.relativePath, p); });
         if (!matched) return false;
     }
     if (std::any_of(excludeSubPaths.begin(), excludeSubPaths.end(),
-                    [&info](const std::wstring& p) { return startsWithNoCase(info.relativePath, p); })) {
+                    [&info](const std::wstring& p) { return pathStartsWithSegment(info.relativePath, p); })) {
         return false;
     }
     // 大小

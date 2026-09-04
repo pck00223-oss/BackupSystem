@@ -39,8 +39,13 @@ std::vector<ChangeRecord> FileComparator::compare(const std::vector<FileInfo>& c
                 // 大小变化 -> 修改
                 rec.change = FileChangeType::Modified;
             } else if (fi.modifiedTime == old.info.modifiedTime) {
-                // 大小与修改时间均相同 -> 暂认为未变化
-                rec.change = FileChangeType::Unchanged;
+                // 秒级时间相同，再比较 100ns 精度时间（防止同秒内内容变化漏报）
+                if (fi.modifiedTime100ns != 0 && old.info.modifiedTime100ns != 0 &&
+                    fi.modifiedTime100ns != old.info.modifiedTime100ns) {
+                    rec.change = FileChangeType::Modified;
+                } else {
+                    rec.change = FileChangeType::Unchanged;
+                }
             } else {
                 // 大小相同但修改时间变化 -> Hash 二次确认
                 FileInfo withHash = fi;

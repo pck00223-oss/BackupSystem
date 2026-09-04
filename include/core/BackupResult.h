@@ -43,7 +43,8 @@ struct RestoreResult {
     uint64_t hashMismatch = 0;  // Hash 校验不一致数
     std::wstring startTime;
     std::wstring endTime;
-    std::vector<std::wstring> errors;
+    std::vector<std::wstring> errors;    // 失败条目与原因（影响 success）
+    std::vector<std::wstring> warnings;  // 非致命警告（如冲突跳过，不影响 success）
 };
 
 }  // namespace backup

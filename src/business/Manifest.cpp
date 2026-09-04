@@ -41,6 +41,7 @@ bool Manifest::saveToFile(const std::wstring& path, std::string* err) const {
         body += "type=" + std::to_string(static_cast<int>(e.info.type)) + "\n";
         body += "size=" + std::to_string(e.info.size) + "\n";
         body += "mtime=" + std::to_string(e.info.modifiedTime) + "\n";
+        body += "mtime_100ns=" + std::to_string(e.info.modifiedTime100ns) + "\n";
         body += "hash=" + e.info.hash + "\n";
         body += "data=" + wideToUtf8(e.dataPath) + "\n";
     }
@@ -63,6 +64,30 @@ bool Manifest::loadFromFile(const std::wstring& path, std::string* err) {
     entries.clear();
     index_.clear();
 
+    // 校验文件头：第一行必须是标识行，防止把任意文本当成合法清单
+    std::string firstLine;
+    if (!std::getline(ifs, firstLine)) {
+        if (err) *err = "manifest is empty";
+        return false;
+    }
+    if (!firstLine.empty() && firstLine.back() == '\r') firstLine.pop_back();
+    if (firstLine != "# BackupSystem Manifest") {
+        if (err) *err = "invalid manifest header: " + firstLine;
+        return false;
+    }
+
+    // 安全数值解析：失败时返回 false，避免 stoull 抛出未捕获异常
+    bool parseError = false;
+    std::string parseErrMsg;
+    const auto safeStoull = [&](const std::string& v, const char* field) -> uint64_t {
+        try { return std::stoull(v); }
+        catch (...) { parseError = true; parseErrMsg = std::string("invalid ") + field + ": " + v; return 0; }
+    };
+    const auto safeStoi = [&](const std::string& v, const char* field) -> int {
+        try { return std::stoi(v); }
+        catch (...) { parseError = true; parseErrMsg = std::string("invalid ") + field + ": " + v; return 0; }
+    };
+
     std::string line;
     bool inFile = false;
     bool haveEntry = false;
@@ -76,6 +101,7 @@ bool Manifest::loadFromFile(const std::wstring& path, std::string* err) {
     };
 
     while (std::getline(ifs, line)) {
+        if (parseError) break;
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line == "[file]") {
             flushEntry();
@@ -95,20 +121,31 @@ bool Manifest::loadFromFile(const std::wstring& path, std::string* err) {
             else if (key == "source") meta.sourcePath = utf8ToWide(val);
             else if (key == "created") meta.created = val;
             else if (key == "type") meta.backupType = val;
-            else if (key == "file_count") meta.fileCount = std::stoull(val);
+            else if (key == "file_count") meta.fileCount = safeStoull(val, "file_count");
         } else {
             if (key == "path") cur.info.relativePath = utf8ToWide(val);
-            else if (key == "type") cur.info.type = static_cast<FileType>(std::stoi(val));
-            else if (key == "size") cur.info.size = std::stoull(val);
-            else if (key == "mtime") cur.info.modifiedTime = std::stoull(val);
+            else if (key == "type") cur.info.type = static_cast<FileType>(safeStoi(val, "type"));
+            else if (key == "size") cur.info.size = safeStoull(val, "size");
+            else if (key == "mtime") cur.info.modifiedTime = safeStoull(val, "mtime");
+            else if (key == "mtime_100ns") cur.info.modifiedTime100ns = safeStoull(val, "mtime_100ns");
             else if (key == "hash") { cur.info.hash = val; cur.info.hashed = !val.empty(); }
             else if (key == "data") cur.dataPath = utf8ToWide(val);
         }
     }
     flushEntry();
 
+    if (parseError) {
+        if (err) *err = parseErrMsg;
+        return false;
+    }
     if (meta.formatVersion != kFormatVersion) {
         if (err) *err = "unsupported manifest version: " + meta.formatVersion;
+        return false;
+    }
+    // file_count 与实际条目数不一致时警告（不强制失败，兼容手动编辑）
+    if (meta.fileCount != 0 && meta.fileCount != entries.size()) {
+        if (err) *err = "file_count mismatch: header=" + std::to_string(meta.fileCount) +
+                         ", actual=" + std::to_string(entries.size());
         return false;
     }
     rebuildIndex();

@@ -105,6 +105,7 @@ void printRestoreResult(const RestoreResult& res) {
     std::cout << "失败     : " << res.failed << "\n";
     std::cout << "Hash校验 : " << res.verified << " 通过, " << res.hashMismatch << " 不一致\n";
     std::cout << "状态     : " << (res.cancelled ? "已取消" : (res.success ? "成功" : "失败")) << "\n";
+    for (const auto& w : res.warnings) std::cout << "  [警告] " << wideToUtf8(w) << "\n";
     for (const auto& e : res.errors) std::cout << "  [错误] " << wideToUtf8(e) << "\n";
     std::cout << "=============================\n";
 }
@@ -142,32 +143,33 @@ int cmdBackup(const std::vector<std::wstring>& args) {
     FileSystem::createDirectories(config.targetPath + L"\\logs");
     Logger::instance().init(config.targetPath + L"\\logs\\backup.log");
 
-    // 定时模式
+    // 定时时间：命令行 --schedule 优先，否则用配置文件里的 schedule
     const std::wstring schedule = getArg(args, L"--schedule");
-    if (!schedule.empty()) {
-        config.scheduleTime = schedule;
-        TaskScheduler scheduler;
-        scheduler.setCallback([](const std::wstring& name, const BackupResult& res) {
-            std::cout << "\n[定时任务 " << wideToUtf8(name) << " 完成]\n";
-            printBackupResult(res);
-        });
-        ScheduledTask task;
-        task.name = L"定时备份";
-        task.config = config;
-        task.scheduleTime = wideToUtf8(schedule);
-        scheduler.addTask(task);
-        scheduler.start();
-        std::cout << "已设置定时备份：每天 " << wideToUtf8(schedule)
-                  << " 执行（当前不触发则挂起等待，Ctrl+C 退出）\n";
-        while (scheduler.isRunning()) ::Sleep(1000);
-        scheduler.stop();
-        return 0;
-    }
+    if (!schedule.empty()) config.scheduleTime = schedule;
 
-    // 立即执行
+    // 立即执行一次
     BackupTask task(config);
     const BackupResult res = task.run();
     printBackupResult(res);
+
+    // 如果配置了定时时间（来自配置文件或 --schedule），进入定时守护模式
+    if (!config.scheduleTime.empty()) {
+        TaskScheduler scheduler;
+        scheduler.setCallback([](const std::wstring& name, const BackupResult& r) {
+            std::cout << "\n[定时任务 " << wideToUtf8(name) << " 完成]\n";
+            printBackupResult(r);
+        });
+        ScheduledTask stask;
+        stask.name = L"定时备份";
+        stask.config = config;
+        stask.scheduleTime = wideToUtf8(config.scheduleTime);
+        scheduler.addTask(stask);
+        scheduler.start();
+        std::cout << "已设置定时备份：每天 " << wideToUtf8(config.scheduleTime)
+                  << " 执行（错过会补跑，Ctrl+C 退出）\n";
+        while (scheduler.isRunning()) ::Sleep(1000);
+        scheduler.stop();
+    }
     return (res.success && !res.cancelled) ? 0 : 1;
 }
 
