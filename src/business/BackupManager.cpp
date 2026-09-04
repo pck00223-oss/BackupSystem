@@ -398,6 +398,14 @@ void BackupManager::recoverResidualData(const std::wstring& targetPath) {
     Manifest manifest;
     std::string loadErr;
     const bool manifestLoaded = manifest.loadFromFile(manifestPathOf(targetPath), &loadErr);
+    if (!manifestLoaded) {
+        // 保守原则：没有 Manifest 就无法区分"合法备份文件"与"崩溃残留"，
+        // 此时绝不自动删除/移动任何数据，交由用户先运行 verify 或重新做一次备份。
+        Logger::instance().warn(
+            L"BackupManager",
+            L"崩溃恢复: 无法读取 Manifest，跳过自动清理（请先运行 verify 确认备份状态）");
+        return;
+    }
 
     std::vector<FileInfo> entries;
     std::vector<std::wstring> errors;
@@ -411,7 +419,7 @@ void BackupManager::recoverResidualData(const std::wstring& targetPath) {
 
         // Manifest 白名单：如果该路径本身就是 Manifest 中的合法备份条目，
         // 则绝不能当作崩溃残留处理（用户的正常文件可能命名为 xxx.baktmp.old）。
-        if (manifestLoaded && manifest.find(e.relativePath)) continue;
+        if (manifest.find(e.relativePath)) continue;
 
         // 1. .baktmp.old*：被移走的旧数据，需结合 Manifest 判断是否已提交
         const std::wstring originalName = parseOldResidual(name);
@@ -425,10 +433,8 @@ void BackupManager::recoverResidualData(const std::wstring& targetPath) {
 
             // 读取 Manifest 中原路径的条目类型
             FileType manifestType = FileType::Unknown;
-            if (manifestLoaded) {
-                const Manifest::Entry* entry = manifest.find(originalRelPath);
-                if (entry) manifestType = entry->info.type;
-            }
+            const Manifest::Entry* entry = manifest.find(originalRelPath);
+            if (entry) manifestType = entry->info.type;
 
             // 磁盘上原路径当前的类型
             FileType diskType = FileType::Unknown;
@@ -436,12 +442,12 @@ void BackupManager::recoverResidualData(const std::wstring& targetPath) {
                 diskType = FileSystem::isDirectory(originalFullPath) ? FileType::Directory : FileType::File;
             }
 
-            if (manifestLoaded && manifestType != FileType::Unknown && diskType == manifestType) {
+            if (manifestType != FileType::Unknown && diskType == manifestType) {
                 // Manifest 类型与磁盘类型一致 → 新状态已提交 → 安全删除旧数据
                 FileSystem::removeAll(fullPath);
                 log.warn(L"BackupManager", L"崩溃恢复: 清理已提交的旧数据 " + e.relativePath);
             } else {
-                // 不一致或 Manifest 未加载 → 新状态未提交 → 还原旧数据
+                // Manifest 类型与磁盘类型不一致 → 新状态未提交 → 还原旧数据
                 if (FileSystem::exists(originalFullPath)) {
                     FileSystem::removeAll(originalFullPath);  // 删除未提交的新对象
                 }
@@ -457,14 +463,9 @@ void BackupManager::recoverResidualData(const std::wstring& targetPath) {
         // 2. .baktmp：只有不在 Manifest 中的才是未完成的临时文件；
         //    用户的正常文件（如 data.baktmp）在 Manifest 中有条目，绝不能误删。
         if (isTempResidual(name)) {
-            bool inManifest = false;
-            if (manifestLoaded) {
-                if (manifest.find(e.relativePath)) inManifest = true;
-            }
-            if (!inManifest) {
-                FileSystem::removeAll(fullPath);
-                log.warn(L"BackupManager", L"崩溃恢复: 清理未完成临时文件 " + e.relativePath);
-            }
+            // 到这里已通过 Manifest 白名单，说明该路径不是合法备份条目
+            FileSystem::removeAll(fullPath);
+            log.warn(L"BackupManager", L"崩溃恢复: 清理未完成临时文件 " + e.relativePath);
             continue;
         }
     }

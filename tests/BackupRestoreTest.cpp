@@ -654,6 +654,36 @@ TEST(CrashRecovery_TempResidual_Detected_And_Cleaned) {
     CHECK(vr2.success);
 }
 
+// 回归测试：Manifest 无法读取时崩溃恢复必须保守，不得自动删除/移动任何文件
+TEST(CrashRecovery_NoManifest_NoAutoDelete) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    // 先做一次完整备份，然后模拟 Manifest 丢失
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+    const std::wstring manifestPath = env.target + L"\\manifest.txt";
+    CHECK(FileSystem::deleteFile(manifestPath));
+
+    // 手工放一个看似残留的文件（此时没有任何 Manifest 可做白名单判断）
+    const std::wstring residual = env.target + L"\\data\\a.txt.baktmp";
+    testutil::writeFile(residual, "ambiguous temp-like file");
+
+    // 无 Manifest 时执行备份：recoverResidualData 应跳过，不删除该文件
+    cfg.mode = BackupMode::Incremental;  // 无旧 Manifest 时会退化为全量
+    BackupResult r2 = BackupManager::run(cfg);
+    CHECK(r2.success);
+    CHECK(FileSystem::exists(residual));
+
+    // 此时 Manifest 已生成，再跑一次增量：恢复逻辑可确认该文件不在白名单内并清理
+    BackupResult r3 = BackupManager::run(cfg);
+    CHECK(r3.success);
+    CHECK(!FileSystem::exists(residual));
+}
+
 // 回归测试：用户的正常 .baktmp.old 文件不被误删
 TEST(CrashRecovery_LegalBaktmpOldFile_NotDeleted) {
     TestEnv env;
