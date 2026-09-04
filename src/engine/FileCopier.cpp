@@ -1,11 +1,16 @@
 // FileCopier.cpp - 文件复制实现
 #include "engine/FileCopier.h"
 
+#include <atomic>
 #include <vector>
 
+#include "core/ResidualUtil.h"
 #include "engine/FileSystem.h"
 
 namespace backup {
+
+// 全局计数器，保证同一进程内临时文件名唯一
+static std::atomic<uint64_t> g_tmpCounter{0};
 
 bool FileCopier::copyFile(const std::wstring& src,
                           const std::wstring& dst,
@@ -14,14 +19,23 @@ bool FileCopier::copyFile(const std::wstring& src,
     FileHandle in = FileSystem::openRead(src, errMsg);
     if (!in.valid()) return false;
 
-    // 原子写入：先写同目录临时文件，成功后 MoveFileEx 原子替换目标。
-    // 避免写入中途失败/取消时留下截断文件，或覆盖恢复时先删后写导致原文件丢失。
-    const std::wstring tmp = dst + L".baktmp";
-    // 清理可能残留的临时文件（上次中断留下的）
-    ::DeleteFileW(tmp.c_str());
-
-    FileHandle out = FileSystem::openWrite(tmp, /*overwrite=*/true, errMsg);
-    if (!out.valid()) return false;
+    // 原子写入：先写同目录唯一临时文件，成功后 MoveFileEx 原子替换目标。
+    // 临时文件名用 "dst + .baktmp. + pid + . + counter"，不再用固定的 "dst + .baktmp"，
+    // 避免与用户的合法文件（如 a.txt.baktmp）撞名并被 DeleteFileW 误删。
+    const DWORD pid = ::GetCurrentProcessId();
+    std::wstring tmp;
+    FileHandle out;
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        tmp = dst + tempSuffix() + L"." + std::to_wstring(pid) + L"." +
+              std::to_wstring(g_tmpCounter.fetch_add(1));
+        // overwrite=false 用 CREATE_NEW，已存在则失败并重试，绝不覆盖已存在的文件
+        out = FileSystem::openWrite(tmp, /*overwrite=*/false, errMsg);
+        if (out.valid()) break;
+    }
+    if (!out.valid()) {
+        if (errMsg) *errMsg = "cannot create unique temp file after 100 attempts";
+        return false;
+    }
 
     bool writeOk = true;
     std::vector<uint8_t> buf(64 * 1024);

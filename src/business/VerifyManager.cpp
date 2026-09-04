@@ -1,41 +1,14 @@
 // VerifyManager.cpp - 备份完整性校验实现
 #include "business/VerifyManager.h"
 
-#include <algorithm>
-
 #include "business/Manifest.h"
 #include "core/HashCalculator.h"
+#include "core/ResidualUtil.h"
 #include "core/Utf.h"
 #include "engine/FileScanner.h"
 #include "engine/FileSystem.h"
 
 namespace backup {
-
-namespace {
-
-// 检查文件名是否是 .baktmp.old 崩溃残留（含 .baktmp.oldN 数字后缀）。
-// 是则返回去掉后缀后的原文件名，否则返回空。
-std::wstring parseOldResidual(const std::wstring& name) {
-    const std::wstring suffix = L".baktmp.old";
-    if (name.size() <= suffix.size()) return L"";
-    const size_t pos = name.rfind(suffix);
-    if (pos == std::wstring::npos) return L"";
-    const std::wstring after = name.substr(pos + suffix.size());
-    if (!std::all_of(after.begin(), after.end(),
-                     [](wchar_t c) { return c >= L'0' && c <= L'9'; })) {
-        return L"";
-    }
-    return name.substr(0, pos);
-}
-
-// 检查文件名是否以 .baktmp 结尾（未完成的临时文件后缀）。
-bool isTmpResidual(const std::wstring& name) {
-    const std::wstring suffix = L".baktmp";
-    if (name.size() < suffix.size()) return false;
-    return name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
-}  // namespace
 
 VerifyResult VerifyManager::run(const std::wstring& backupRoot, const Options& opts) {
     VerifyResult res;
@@ -134,7 +107,7 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const Options& o
                     ++res.residual;
                     res.errors.push_back(std::wstring(L"[残留] 崩溃遗留旧数据: ") + e.relativePath +
                                           L" (运行备份可自动恢复)");
-                } else if (isTmpResidual(name)) {
+                } else if (isTempResidual(name)) {
                     ++res.residual;
                     res.errors.push_back(std::wstring(L"[残留] 未完成临时文件: ") + e.relativePath +
                                           L" (运行备份可自动清理)");

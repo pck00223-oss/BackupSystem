@@ -573,6 +573,49 @@ TEST(CrashRecovery_OldResidual_Committed_Cleaned) {
     CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
 }
 
+// 回归测试：源目录同时含 a.txt 与 a.txt.baktmp，修改前者后增量备份不丢后者
+TEST(FileCopier_TempFile_NoCollision_WithLegalFile) {
+    TestEnv env;
+    // 源目录同时放 a.txt 和 a.txt.baktmp（合法文件，恰好与旧临时文件后缀同名）
+    testutil::writeFile(env.src + L"a.txt", "original");
+    testutil::writeFile(env.src + L"a.txt.baktmp", "legal temp-named file");
+
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    // 第一次全量备份，两者都应入库
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
+    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt.baktmp"));
+
+    // 修改 a.txt（a.txt.baktmp 不变）
+    testutil::writeFile(env.src + L"a.txt", "modified content");
+
+    // 增量备份：复制 a.txt 时临时文件不应覆盖 a.txt.baktmp
+    cfg.mode = BackupMode::Incremental;
+    BackupResult r2 = BackupManager::run(cfg);
+    CHECK(r2.success);
+    CHECK(r2.modified == 1);  // a.txt 被修改
+    CHECK(r2.unchanged >= 1); // a.txt.baktmp 未变化
+
+    // 关键：a.txt.baktmp 的备份数据不能丢
+    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt.baktmp"));
+    // a.txt 应已更新
+    std::string hashA;
+    HashCalculator::fileSha256(env.target + L"\\data\\a.txt", hashA);
+    std::string hashSrc;
+    HashCalculator::fileSha256(env.src + L"\\a.txt", hashSrc);
+    CHECK(hashA == hashSrc);
+
+    // verify 确认无缺失
+    VerifyResult vr = VerifyManager::run(env.target);
+    CHECK(vr.missing == 0);
+    CHECK(vr.success);
+}
+
 // 回归测试：用户的正常 .baktmp.old 文件不被误删
 TEST(CrashRecovery_LegalBaktmpOldFile_NotDeleted) {
     TestEnv env;
