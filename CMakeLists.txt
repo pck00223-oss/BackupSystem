@@ -98,6 +98,7 @@ add_library(backup_core STATIC
     src/business/VerifyManager.cpp
     src/app/BackupTask.cpp
     src/app/ConfigLoader.cpp
+    src/app/ScheduleManager.cpp
     src/app/TaskScheduler.cpp
 )
 target_include_directories(backup_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

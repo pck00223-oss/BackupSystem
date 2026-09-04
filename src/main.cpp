@@ -1,6 +1,6 @@
 // main.cpp - 命令行入口（应用层演示）
-// 提供 backup / restore / history 三个子命令，以及基于配置文件的定时备份。
-// GUI 在 Phase 9 接入，本入口用于直接验证核心链路。
+// 提供 backup / restore / verify / history / schedule 子命令。
+// schedule 子命令将备份注册为 Windows 计划任务，到点自动执行后退出，无需程序常驻。
 #include <windows.h>
 
 #include <algorithm>
@@ -13,6 +13,7 @@
 
 #include "app/BackupTask.h"
 #include "app/ConfigLoader.h"
+#include "app/ScheduleManager.h"
 #include "app/TaskScheduler.h"
 #include "business/BackupManager.h"
 #include "business/RestoreManager.h"
@@ -26,10 +27,14 @@ using namespace backup;
 
 namespace {
 
-std::wstring executableDir() {
+std::wstring executablePath() {
     wchar_t buf[MAX_PATH];
     const DWORD n = ::GetModuleFileNameW(nullptr, buf, MAX_PATH);
-    std::wstring path(buf, n);
+    return std::wstring(buf, n);
+}
+
+std::wstring executableDir() {
+    std::wstring path = executablePath();
     const size_t pos = path.find_last_of(L"\\/");
     return pos == std::wstring::npos ? L"." : path.substr(0, pos);
 }
@@ -52,7 +57,6 @@ std::vector<std::wstring> splitExtList(const std::wstring& v) {
     for (wchar_t ch : v) {
         if (ch == L',') {
             if (!cur.empty()) {
-                // 统一转小写并补点号，与 ConfigLoader 行为一致
                 std::transform(cur.begin(), cur.end(), cur.begin(),
                                [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
                 if (cur[0] != L'.') cur = L"." + cur;
@@ -80,11 +84,15 @@ void printHelp() {
         "      --type full|incremental   备份模式（默认全量）\n"
         "      --include-ext .cpp,.h     仅备份这些扩展名\n"
         "      --exclude-ext .tmp,.log   排除这些扩展名\n"
-        "      --schedule HH:MM          设置每天定时备份\n"
+        "      --schedule HH:MM          程序常驻定时备份（不推荐长期自用）\n"
         "      --config <file>           配置文件（默认 config/default.conf）\n"
         "  backupapp restore --backup <dir> --to <dir> [--overwrite]\n"
         "  backupapp verify  --backup <dir>\n"
         "  backupapp history --target <dir>\n"
+        "  backupapp schedule --register --time HH:MM --source <dir> --target <dir> [--type full|inc] [--name <task>]\n"
+        "      注册为 Windows 计划任务，到点自动备份后退出（推荐长期自用）\n"
+        "  backupapp schedule --unregister [--name <task>]\n"
+        "  backupapp schedule --status [--name <task>]\n"
         "  backupapp help\n";
 }
 
@@ -154,17 +162,14 @@ int cmdBackup(const std::vector<std::wstring>& args) {
         return 1;
     }
 
-    // 初始化日志（写入目标目录下的 logs）
     FileSystem::createDirectories(config.targetPath + L"\\logs");
     Logger::instance().init(config.targetPath + L"\\logs\\backup.log");
 
-    // 定时时间：命令行 --schedule 优先，否则用配置文件里的 schedule
     const std::wstring schedule = getArg(args, L"--schedule");
     if (!schedule.empty()) config.scheduleTime = schedule;
 
-    // 有定时配置时进入守护调度模式（不立即执行，由调度器按计划时间触发；
-    // 若启动时已错过当天计划时间，调度器会自动补跑一次）。
-    // 无定时配置时立即执行一次备份。
+    // 常驻定时模式（--schedule）：程序一直开着才会触发。
+    // 长期自用推荐用 schedule --register 注册 Windows 计划任务。
     if (!config.scheduleTime.empty()) {
         TaskScheduler scheduler;
         scheduler.setCallback([](const std::wstring& name, const BackupResult& r) {
@@ -177,14 +182,14 @@ int cmdBackup(const std::vector<std::wstring>& args) {
         stask.scheduleTime = wideToUtf8(config.scheduleTime);
         scheduler.addTask(stask);
         scheduler.start();
-        std::cout << "已设置定时备份：每天 " << wideToUtf8(config.scheduleTime)
-                  << " 执行（错过会补跑，Ctrl+C 退出）\n";
+        std::cout << "已设置常驻定时备份：每天 " << wideToUtf8(config.scheduleTime)
+                  << " 执行（错过会补跑，Ctrl+C 退出）\n"
+                  << "提示：长期自用推荐用 'backupapp schedule --register' 注册 Windows 计划任务，无需程序常驻。\n";
         while (scheduler.isRunning()) ::Sleep(1000);
         scheduler.stop();
         return 0;
     }
 
-    // 立即执行一次
     BackupTask task(config);
     const BackupResult res = task.run();
     printBackupResult(res);
@@ -257,10 +262,83 @@ int cmdVerify(const std::vector<std::wstring>& args) {
     return res.success ? 0 : 1;
 }
 
+int cmdSchedule(const std::vector<std::wstring>& args) {
+    const std::wstring taskName = getArg(args, L"--name", ScheduleManager::defaultTaskName());
+
+    // schedule --status
+    if (hasArg(args, L"--status")) {
+        std::cout << "任务名   : " << wideToUtf8(taskName) << "\n";
+        if (ScheduleManager::isRegistered(taskName)) {
+            std::cout << "状态     : 已注册\n";
+            const std::wstring next = ScheduleManager::getNextRunTime(taskName);
+            if (!next.empty()) std::cout << "下次运行 : " << wideToUtf8(next) << "\n";
+        } else {
+            std::cout << "状态     : 未注册\n";
+        }
+        return 0;
+    }
+
+    // schedule --unregister
+    if (hasArg(args, L"--unregister")) {
+        std::string err;
+        if (ScheduleManager::unregister(taskName, &err)) {
+            std::cout << "已卸载任务: " << wideToUtf8(taskName) << "\n";
+            return 0;
+        }
+        std::cout << "卸载失败: " << err << "\n";
+        return 1;
+    }
+
+    // schedule --register
+    if (hasArg(args, L"--register")) {
+        const std::wstring time = getArg(args, L"--time");
+        const std::wstring src = getArg(args, L"--source");
+        const std::wstring tgt = getArg(args, L"--target");
+        if (time.empty() || src.empty() || tgt.empty()) {
+            std::cout << "错误：schedule --register 需要 --time HH:MM --source <dir> --target <dir>\n";
+            printHelp();
+            return 1;
+        }
+
+        const std::wstring type = getArg(args, L"--type", L"full");
+        const std::wstring modeArg = (type == L"inc" || type == L"incremental") ? L"incremental" : L"full";
+
+        // 构造任务执行的命令行参数：backupapp backup --source <src> --target <tgt> --type <mode>
+        // 路径含空格时用引号包裹
+        const auto quote = [](const std::wstring& s) -> std::wstring {
+            if (s.find(L' ') == std::wstring::npos) return s;
+            return L"\"" + s + L"\"";
+        };
+        const std::wstring arguments =
+            L"backup --source " + quote(src) +
+            L" --target " + quote(tgt) +
+            L" --type " + modeArg;
+
+        const std::wstring exe = executablePath();
+        std::string err;
+        if (ScheduleManager::registerDaily(taskName, exe, arguments, time, &err)) {
+            std::cout << "已注册 Windows 计划任务:\n";
+            std::cout << "  任务名 : " << wideToUtf8(taskName) << "\n";
+            std::cout << "  程序   : " << wideToUtf8(exe) << "\n";
+            std::cout << "  参数   : " << wideToUtf8(arguments) << "\n";
+            std::cout << "  时间   : 每天 " << wideToUtf8(time) << "\n";
+            std::cout << "到点将自动执行备份，完成后退出，无需程序常驻。\n";
+            std::cout << "查看状态: backupapp schedule --status\n";
+            std::cout << "卸载任务: backupapp schedule --unregister\n";
+            return 0;
+        }
+        std::cout << "注册失败: " << err << "\n";
+        return 1;
+    }
+
+    std::cout << "用法：schedule --register | --unregister | --status\n";
+    printHelp();
+    return 1;
+}
+
 }  // namespace
 
 int main() {
-    // 控制台输出 UTF-8，保证中文与中文路径正常显示
     ::SetConsoleOutputCP(CP_UTF8);
 
     int argc = 0;
@@ -280,6 +358,7 @@ int main() {
     if (args[0] == L"restore") return cmdRestore(args);
     if (args[0] == L"verify") return cmdVerify(args);
     if (args[0] == L"history") return cmdHistory(args);
+    if (args[0] == L"schedule") return cmdSchedule(args);
 
     std::cout << "未知命令: " << wideToUtf8(args[0]) << "\n";
     printHelp();

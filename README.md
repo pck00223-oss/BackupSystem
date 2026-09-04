@@ -1,4 +1,4 @@
-# BackupSystem - 基于 C++ / Windows 的数据备份软件
+﻿# BackupSystem - 基于 C++ / Windows 的数据备份软件
 
 面向软件工程 / 计算机复试的本地数据备份工具。采用**分层架构 + 面向对象设计**，实现
 全量备份、增量备份、数据恢复、完整性校验、Manifest 增量检测、SHA-256 校验、任务调度、日志与异常处理。
@@ -104,7 +104,15 @@ build\backupapp.exe restore --backup D:\Backup --to E:\Restored
 # 完整性校验：按 Manifest 检查 data/ 仓库是否有缺失或损坏
 build\backupapp.exe verify --backup D:\Backup
 
-# 定时备份：每天 20:00 自动执行（程序保持运行，错过自动补跑）
+# 注册为 Windows 计划任务（推荐长期自用）：每天 20:00 自动备份，完成后退出，无需程序常驻
+# 需要以管理员身份运行
+build\backupapp.exe schedule --register --time 20:00 --source D:\MyData --target D:\Backup --type full
+
+# 查看计划任务状态 / 卸载
+build\backupapp.exe schedule --status
+build\backupapp.exe schedule --unregister
+
+# 常驻定时备份（不推荐长期自用）：程序保持运行，错过自动补跑
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --schedule 20:00
 
 # 查看历史
