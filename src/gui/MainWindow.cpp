@@ -592,7 +592,7 @@ static INT_PTR CALLBACK newTaskDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARA
             }
         }
     }
-    return FALSE;
+    return DefWindowProcW(hDlg, msg, wParam, lParam);
 }
 
 bool MainWindow::showNewTaskDialog(BackupTask& outTask) {
@@ -681,7 +681,7 @@ static INT_PTR CALLBACK inputDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
                 200, 70, 80, 28, hDlg, (HMENU)IDCANCEL, nullptr, nullptr);
 
             SetFocus(data->hEdit);
-            return FALSE;
+            return 0;
         }
         case WM_COMMAND:
             if (LOWORD(wParam) == IDOK) {
@@ -697,7 +697,7 @@ static INT_PTR CALLBACK inputDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
                 return TRUE;
             }
     }
-    return FALSE;
+    return DefWindowProcW(hDlg, msg, wParam, lParam);
 }
 
 bool MainWindow::showInputDialog(const std::wstring& title, const std::wstring& prompt,
