@@ -1,6 +1,8 @@
 // VerifyManager.cpp - 备份完整性校验实现
 #include "business/VerifyManager.h"
 
+#include <algorithm>
+
 #include "business/Manifest.h"
 #include "core/HashCalculator.h"
 #include "core/Utf.h"
@@ -19,13 +21,14 @@ std::wstring parseOldResidual(const std::wstring& name) {
     const size_t pos = name.rfind(suffix);
     if (pos == std::wstring::npos) return L"";
     const std::wstring after = name.substr(pos + suffix.size());
-    for (wchar_t c : after) {
-        if (c < L'0' || c > L'9') return L"";
+    if (!std::all_of(after.begin(), after.end(),
+                     [](wchar_t c) { return c >= L'0' && c <= L'9'; })) {
+        return L"";
     }
     return name.substr(0, pos);
 }
 
-// 检查文件名是否以 .baktmp 结尾（未完成的临时文件）。
+// 检查文件名是否以 .baktmp 结尾（未完成的临时文件后缀）。
 bool isTmpResidual(const std::wstring& name) {
     const std::wstring suffix = L".baktmp";
     if (name.size() < suffix.size()) return false;
@@ -66,7 +69,9 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const Options& o
 
         if (opts.progress) opts.progress(e.info.relativePath);
 
-        const std::wstring dataPath = dataDir + L"\\" + e.info.relativePath;
+        // 使用 Manifest 中记录的 dataPath（与 RestoreManager 一致），
+        // 单镜像方案中 dataPath 默认等于 relativePath，但以 Manifest 记录为准。
+        const std::wstring dataPath = dataDir + L"\\" + e.dataPath;
 
         // 2a. 检查文件是否存在
         if (!FileSystem::exists(dataPath)) {
@@ -109,7 +114,8 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const Options& o
         ++res.passed;
     }
 
-    // 3. 崩溃残留检测：扫描 data/ 目录，查找 .baktmp / .baktmp.old 残留
+    // 3. 崩溃残留检测：扫描 data/ 目录，查找不在 Manifest 中的 .baktmp / .baktmp.old 残留。
+    //    关键：用户的正常文件（如 data.baktmp）在 Manifest 中有条目，绝不能误报为残留。
     if (FileSystem::exists(dataDir)) {
         std::vector<FileInfo> entries;
         std::vector<std::wstring> scanErrors;
@@ -121,6 +127,9 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const Options& o
                     return res;
                 }
                 const std::wstring& name = e.name;
+                // 只有不在 Manifest 中的文件才可能是残留（用户的正常文件在 Manifest 中有条目）
+                if (manifest.find(e.relativePath)) continue;
+
                 if (!parseOldResidual(name).empty()) {
                     ++res.residual;
                     res.errors.push_back(std::wstring(L"[残留] 崩溃遗留旧数据: ") + e.relativePath +

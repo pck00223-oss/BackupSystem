@@ -4,6 +4,7 @@
 //   保存新 Manifest -> 记录历史 -> 生成 BackupResult
 #include "business/BackupManager.h"
 
+#include <algorithm>
 #include <fstream>
 
 #include "business/FileComparator.h"
@@ -391,6 +392,12 @@ void BackupManager::recoverResidualData(const std::wstring& targetPath) {
     const std::wstring dataDir = dataDirOf(targetPath);
     if (!FileSystem::exists(dataDir)) return;
 
+    // 读取当前 Manifest：用于区分"合法备份文件"与"崩溃残留"，
+    // 以及判断 .baktmp.old 对应的新状态是否已提交（类型一致=已提交）。
+    Manifest manifest;
+    std::string loadErr;
+    const bool manifestLoaded = manifest.loadFromFile(manifestPathOf(targetPath), &loadErr);
+
     std::vector<FileInfo> entries;
     std::vector<std::wstring> errors;
     if (!FileScanner::scan(dataDir, entries, errors)) return;
@@ -399,60 +406,81 @@ void BackupManager::recoverResidualData(const std::wstring& targetPath) {
     const std::wstring oldSuffix = L".baktmp.old";
     const std::wstring tmpSuffix = L".baktmp";
 
+    // 判断文件名是否是 .baktmp.old 崩溃残留（含 .baktmp.oldN 数字后缀）。
+    // 是则返回去掉后缀后的原文件名，否则返回空。
+    const auto parseOldResidual = [&](const std::wstring& fname) -> std::wstring {
+        if (fname.size() <= oldSuffix.size()) return L"";
+        const size_t pos = fname.rfind(oldSuffix);
+        if (pos == std::wstring::npos) return L"";
+        const std::wstring after = fname.substr(pos + oldSuffix.size());
+        const bool allDigits = std::all_of(after.begin(), after.end(),
+                                            [](wchar_t c) { return c >= L'0' && c <= L'9'; });
+        if (!allDigits) return L"";
+        return fname.substr(0, pos);
+    };
+
+    // 判断文件名是否以 .baktmp 结尾（未完成的临时文件后缀）。
+    const auto isTmpResidual = [&](const std::wstring& fname) -> bool {
+        if (fname.size() < tmpSuffix.size()) return false;
+        return fname.compare(fname.size() - tmpSuffix.size(), tmpSuffix.size(), tmpSuffix) == 0;
+    };
+
     for (const auto& e : entries) {
         const std::wstring& name = e.name;
         const std::wstring fullPath = dataDir + L"\\" + e.relativePath;
 
-        // 先判断 .baktmp.old*（被移走的旧数据），因为它也以 .baktmp 结尾
-        bool isOldResidual = false;
-        std::wstring originalName;
-        if (name.size() > oldSuffix.size()) {
-            const size_t pos = name.rfind(oldSuffix);
-            if (pos != std::wstring::npos) {
-                const std::wstring after = name.substr(pos + oldSuffix.size());
-                bool allDigits = !after.empty() || after.empty();
-                // after 为空（.baktmp.old）或全为数字（.baktmp.old1）
-                for (wchar_t c : after) {
-                    if (c < L'0' || c > L'9') { allDigits = false; break; }
-                }
-                if (allDigits) {
-                    isOldResidual = true;
-                    originalName = name.substr(0, pos);
-                }
-            }
-        }
-
-        if (isOldResidual) {
-            // 计算原路径：把 e.relativePath 中的文件名替换为 originalName
-            std::wstring originalRelPath = e.relativePath;
-            const size_t lastSlash = originalRelPath.find_last_of(L"\\/");
-            if (lastSlash != std::wstring::npos) {
-                originalRelPath = originalRelPath.substr(0, lastSlash + 1) + originalName;
-            } else {
-                originalRelPath = originalName;
-            }
+        // 1. .baktmp.old*：被移走的旧数据，需结合 Manifest 判断是否已提交
+        const std::wstring originalName = parseOldResidual(name);
+        if (!originalName.empty()) {
+            // 计算原相对路径：把 e.relativePath 中的文件名替换为 originalName
+            const size_t lastSlash = e.relativePath.find_last_of(L"\\/");
+            const std::wstring originalRelPath = (lastSlash != std::wstring::npos)
+                ? e.relativePath.substr(0, lastSlash + 1) + originalName
+                : originalName;
             const std::wstring originalFullPath = dataDir + L"\\" + originalRelPath;
 
-            if (!FileSystem::exists(originalFullPath)) {
-                // 原路径不存在，恢复旧数据（上次在保存 Manifest 前被强杀）
+            // 读取 Manifest 中原路径的条目类型
+            FileType manifestType = FileType::Unknown;
+            if (manifestLoaded) {
+                const Manifest::Entry* entry = manifest.find(originalRelPath);
+                if (entry) manifestType = entry->info.type;
+            }
+
+            // 磁盘上原路径当前的类型
+            FileType diskType = FileType::Unknown;
+            if (FileSystem::exists(originalFullPath)) {
+                diskType = FileSystem::isDirectory(originalFullPath) ? FileType::Directory : FileType::File;
+            }
+
+            if (manifestLoaded && manifestType != FileType::Unknown && diskType == manifestType) {
+                // Manifest 类型与磁盘类型一致 → 新状态已提交 → 安全删除旧数据
+                FileSystem::removeAll(fullPath);
+                log.warn(L"BackupManager", L"崩溃恢复: 清理已提交的旧数据 " + e.relativePath);
+            } else {
+                // 不一致或 Manifest 未加载 → 新状态未提交 → 还原旧数据
+                if (FileSystem::exists(originalFullPath)) {
+                    FileSystem::removeAll(originalFullPath);  // 删除未提交的新对象
+                }
                 if (FileSystem::movePath(fullPath, originalFullPath)) {
-                    log.warn(L"BackupManager", L"崩溃恢复: 还原旧数据 " + e.relativePath + L" -> " + originalRelPath);
+                    log.warn(L"BackupManager", L"崩溃恢复: 还原未提交的旧数据 " + e.relativePath + L" -> " + originalRelPath);
                 } else {
                     log.error(L"BackupManager", L"崩溃恢复: 还原旧数据失败 " + fullPath);
                 }
-            } else {
-                // 原路径已存在（新数据已就位，Manifest 已更新），删除旧数据
-                FileSystem::removeAll(fullPath);
-                log.warn(L"BackupManager", L"崩溃恢复: 清理遗留旧数据 " + e.relativePath);
             }
             continue;
         }
 
-        // .baktmp：未完成的临时文件，直接删除
-        if (name.size() >= tmpSuffix.size() &&
-            name.compare(name.size() - tmpSuffix.size(), tmpSuffix.size(), tmpSuffix) == 0) {
-            FileSystem::removeAll(fullPath);
-            log.warn(L"BackupManager", L"崩溃恢复: 清理临时文件 " + e.relativePath);
+        // 2. .baktmp：只有不在 Manifest 中的才是未完成的临时文件；
+        //    用户的正常文件（如 data.baktmp）在 Manifest 中有条目，绝不能误删。
+        if (isTmpResidual(name)) {
+            bool inManifest = false;
+            if (manifestLoaded) {
+                if (manifest.find(e.relativePath)) inManifest = true;
+            }
+            if (!inManifest) {
+                FileSystem::removeAll(fullPath);
+                log.warn(L"BackupManager", L"崩溃恢复: 清理未完成临时文件 " + e.relativePath);
+            }
             continue;
         }
     }

@@ -487,3 +487,110 @@ TEST(Scheduler_MissedTime_RunsOnce) {
 
     CHECK(runCount.load() == 1);
 }
+
+// 回归测试：用户的正常 .baktmp 文件不被误判为残留、不被误删
+TEST(CrashRecovery_LegalBaktmpFile_NotDeleted) {
+    TestEnv env;
+    // 源目录放一个以 .baktmp 结尾的正常文件
+    testutil::writeFile(env.src + L"normal.baktmp", "this is a normal file");
+
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    // 第一次全量备份
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+    CHECK(FileSystem::exists(env.target + L"\\data\\normal.baktmp"));
+
+    // verify 不应把合法文件报为残留
+    VerifyResult vr = VerifyManager::run(env.target);
+    CHECK(vr.residual == 0);
+    CHECK(vr.success);
+
+    // 第二次增量备份（触发 recoverResidualData），合法文件不应被删
+    cfg.mode = BackupMode::Incremental;
+    BackupResult r2 = BackupManager::run(cfg);
+    CHECK(r2.success);
+    CHECK(FileSystem::exists(env.target + L"\\data\\normal.baktmp"));
+}
+
+// 回归测试：.baktmp.old 残留且原路径不存在 → 崩溃恢复应还原旧数据
+TEST(CrashRecovery_OldResidual_Restored) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    // 全量备份 a.txt
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
+
+    // 模拟崩溃：把 data\a.txt 移到 data\a.txt.baktmp.old（原路径不存在）
+    const std::wstring dataFile = env.target + L"\\data\\a.txt";
+    const std::wstring oldFile = env.target + L"\\data\\a.txt.baktmp.old";
+    CHECK(FileSystem::movePath(dataFile, oldFile));
+    CHECK(!FileSystem::exists(dataFile));
+    CHECK(FileSystem::exists(oldFile));
+
+    // 运行增量备份（触发崩溃恢复）
+    cfg.mode = BackupMode::Incremental;
+    BackupResult r2 = BackupManager::run(cfg);
+    CHECK(r2.success);
+
+    // 旧数据应被还原，残留应被清理
+    CHECK(FileSystem::exists(dataFile));
+    CHECK(!FileSystem::exists(oldFile));
+}
+
+// 回归测试：.baktmp.old 残留且原路径已存在（类型一致）→ 应删除旧数据
+TEST(CrashRecovery_OldResidual_Committed_Cleaned) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    // 全量备份
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+
+    // 模拟已提交状态：data\a.txt 存在，同时创建 a.txt.baktmp.old（未清理的旧数据）
+    const std::wstring oldFile = env.target + L"\\data\\a.txt.baktmp.old";
+    testutil::writeFile(oldFile, "old stale data");
+    CHECK(FileSystem::exists(oldFile));
+
+    // 运行增量备份（触发崩溃恢复）
+    cfg.mode = BackupMode::Incremental;
+    BackupResult r2 = BackupManager::run(cfg);
+    CHECK(r2.success);
+
+    // 原路径存在且类型与 Manifest 一致 → 旧数据应被清理
+    CHECK(!FileSystem::exists(oldFile));
+    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
+}
+
+// 回归测试：verify 取消回调能中止校验
+TEST(Verify_CancelCheck_Aborts) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+
+    // verify 时 cancelCheck 始终返回 true
+    VerifyManager::Options vopts;
+    vopts.cancelCheck = []() { return true; };
+    VerifyResult vr = VerifyManager::run(env.target, vopts);
+    CHECK(!vr.success);
+    bool foundCancel = false;
+    for (const auto& e : vr.errors) {
+        if (e.find(L"取消") != std::wstring::npos) foundCancel = true;
+    }
+    CHECK(foundCancel);
+}
