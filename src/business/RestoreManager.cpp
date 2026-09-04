@@ -80,12 +80,8 @@ RestoreResult RestoreManager::run(const RestoreConfig& config,
                                      L"（使用覆盖选项可替换）");
                 continue;
             }
-            if (!FileSystem::deleteFile(dstAbs)) {
-                ++res.failed;
-                res.errors.push_back(std::wstring(L"无法覆盖目标文件: ") + rel);
-                log.error(L"RestoreManager", L"无法覆盖: " + rel);
-                continue;
-            }
+            // 覆盖模式不再先删后写：FileCopier 内部用临时文件+原子替换，
+            // 复制中途失败不会丢失原有目标文件。
         }
 
         std::string copyErr;

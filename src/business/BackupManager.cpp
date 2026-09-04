@@ -74,6 +74,21 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         res.endTime = formatNowWide();
         return res;
     }
+    // 禁止目标位于源目录内，否则扫描会把上次备份的数据也当成源内容，自我膨胀。
+    {
+        std::wstring srcNorm = config.sourcePath;
+        std::wstring tgtNorm = config.targetPath;
+        while (!srcNorm.empty() && srcNorm.back() == L'\\') srcNorm.pop_back();
+        while (!tgtNorm.empty() && tgtNorm.back() == L'\\') tgtNorm.pop_back();
+        const std::wstring prefix = srcNorm + L"\\";
+        if (tgtNorm.size() > prefix.size() &&
+            wcsicmpSafe(tgtNorm.substr(0, prefix.size()), prefix) == 0) {
+            res.errors.push_back(std::wstring(L"目标路径不能位于源目录内: ") + config.targetPath);
+            log.error(L"BackupManager", L"目标路径不能位于源目录内: " + config.targetPath);
+            res.endTime = formatNowWide();
+            return res;
+        }
+    }
     if (!FileSystem::createDirectories(config.targetPath)) {
         res.errors.push_back(std::wstring(L"无法创建目标目录: ") + config.targetPath);
         log.error(L"BackupManager", L"无法创建目标目录: " + config.targetPath);
@@ -92,6 +107,11 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     }
     res.totalScanned = static_cast<uint64_t>(scanned.size());
     res.errors.insert(res.errors.end(), scanErrors.begin(), scanErrors.end());
+    // 扫描阶段的错误（如子目录无权访问）意味着备份不完整，必须计入失败。
+    if (!scanErrors.empty()) {
+        res.failed += static_cast<uint64_t>(scanErrors.size());
+        log.warn(L"BackupManager", L"扫描阶段有 " + std::to_wstring(scanErrors.size()) + L" 个错误，备份不完整");
+    }
     log.info(L"BackupManager", L"扫描完成: " + std::to_wstring(scanned.size()) + L" 个条目");
 
     // 扫描后立即响应取消（例如用户在选择阶段即取消）
@@ -214,6 +234,16 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     }
 
     // ---- 8. 保存 Manifest ----
+    // 关键：只要有文件失败，就不覆盖旧 Manifest，保留上一次完整清单。
+    // 否则失败文件会从清单中消失，恢复时静默缺失。
+    if (res.failed > 0) {
+        log.error(L"BackupManager", L"有 " + std::to_wstring(res.failed) + L" 个失败，不覆盖旧 Manifest（保留上一次完整清单）");
+        res.success = false;
+        appendHistory(config.targetPath, res);
+        res.endTime = formatNowWide();
+        return res;
+    }
+
     Manifest manifest;
     manifest.meta.backupId = wideToUtf8(res.backupId);
     manifest.meta.sourcePath = config.sourcePath;

@@ -30,8 +30,10 @@ FILETIME unixSecondsToFiletime(uint64_t sec) {
 }
 
 FileType attributesToType(DWORD attrs) {
-    if (attrs & FILE_ATTRIBUTE_DIRECTORY) return FileType::Directory;
+    // reparse point（junction/符号链接）必须优先判断，
+    // 否则带 DIRECTORY 属性的 junction 会被当成普通目录递归，可能成环或越界备份。
     if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) return FileType::Symlink;
+    if (attrs & FILE_ATTRIBUTE_DIRECTORY) return FileType::Directory;
     return FileType::File;
 }
 

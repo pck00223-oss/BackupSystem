@@ -60,6 +60,9 @@ void FileScanner::scanRecursive(const std::wstring& absRoot,
             errors.push_back(std::wstring(L"无法获取文件信息: ") + abs);
             continue;
         }
+        // 默认跳过 reparse point（junction/目录符号链接），防止递归成环或越界备份。
+        // 如需跟随符号链接，可在此处增加 followSymlinks 选项。
+        if (info.type == FileType::Symlink) continue;
         out.push_back(info);
 
         if (info.type == FileType::Directory) {
