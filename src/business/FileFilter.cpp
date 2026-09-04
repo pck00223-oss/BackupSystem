@@ -27,10 +27,14 @@ bool listContains(const std::vector<std::wstring>& list, const std::wstring& val
 
 // 目录段前缀匹配：prefix 匹配 relativePath 的前缀，且 prefix 后是路径分隔符或完全相等。
 // 防止 exclude_path=doc 误排除 documents\重要文件。
+// 自动去除 prefix 尾部的 \ 或 /，兼容配置文件里写 temp\ 的情况。
 bool pathStartsWithSegment(const std::wstring& relativePath, const std::wstring& prefix) {
-    if (!startsWithNoCase(relativePath, prefix)) return false;
-    if (relativePath.size() == prefix.size()) return true;
-    const wchar_t next = relativePath[prefix.size()];
+    std::wstring p = prefix;
+    while (!p.empty() && (p.back() == L'\\' || p.back() == L'/')) p.pop_back();
+    if (p.empty()) return false;
+    if (!startsWithNoCase(relativePath, p)) return false;
+    if (relativePath.size() == p.size()) return true;
+    const wchar_t next = relativePath[p.size()];
     return next == L'\\' || next == L'/';
 }
 

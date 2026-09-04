@@ -74,17 +74,19 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         res.endTime = formatNowWide();
         return res;
     }
-    // 禁止目标位于源目录内，否则扫描会把上次备份的数据也当成源内容，自我膨胀。
+    // 禁止目标等于源或位于源目录内，否则扫描会把备份产物也当成源内容，自我膨胀。
     {
         std::wstring srcNorm = config.sourcePath;
         std::wstring tgtNorm = config.targetPath;
         while (!srcNorm.empty() && srcNorm.back() == L'\\') srcNorm.pop_back();
         while (!tgtNorm.empty() && tgtNorm.back() == L'\\') tgtNorm.pop_back();
         const std::wstring prefix = srcNorm + L"\\";
-        if (tgtNorm.size() > prefix.size() &&
-            wcsicmpSafe(tgtNorm.substr(0, prefix.size()), prefix) == 0) {
-            res.errors.push_back(std::wstring(L"目标路径不能位于源目录内: ") + config.targetPath);
-            log.error(L"BackupManager", L"目标路径不能位于源目录内: " + config.targetPath);
+        const bool sameAsSource = (wcsicmpSafe(tgtNorm, srcNorm) == 0);
+        const bool insideSource = (tgtNorm.size() > prefix.size() &&
+            wcsicmpSafe(tgtNorm.substr(0, prefix.size()), prefix) == 0);
+        if (sameAsSource || insideSource) {
+            res.errors.push_back(std::wstring(L"目标路径不能等于或位于源目录内: ") + config.targetPath);
+            log.error(L"BackupManager", L"目标路径不能等于或位于源目录内: " + config.targetPath);
             res.endTime = formatNowWide();
             return res;
         }
@@ -99,7 +101,8 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     // ---- 2. 扫描 ----
     std::vector<FileInfo> scanned;
     std::vector<std::wstring> scanErrors;
-    if (!FileScanner::scan(config.sourcePath, scanned, scanErrors, cancel, opts.progress)) {
+    std::vector<std::wstring> scanWarnings;
+    if (!FileScanner::scan(config.sourcePath, scanned, scanErrors, cancel, opts.progress, &scanWarnings)) {
         res.success = false;
         res.errors = std::move(scanErrors);
         res.endTime = formatNowWide();
@@ -107,6 +110,7 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     }
     res.totalScanned = static_cast<uint64_t>(scanned.size());
     res.errors.insert(res.errors.end(), scanErrors.begin(), scanErrors.end());
+    res.warnings.insert(res.warnings.end(), scanWarnings.begin(), scanWarnings.end());
     // 扫描阶段的错误（如子目录无权访问）意味着备份不完整，必须计入失败。
     if (!scanErrors.empty()) {
         res.failed += static_cast<uint64_t>(scanErrors.size());
@@ -126,7 +130,9 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     // ---- 3. 筛选 ----
     FileFilter filter;
     filter.setRule(config.filter);
-    // keepDirectories=true：保留目录条目，使空目录能进入 Manifest 并在恢复时重建
+    // keepDirectories=true：保留目录条目，使空目录能进入 Manifest 并在恢复时重建。
+    // 注意：目录不受 include_ext/include_path 等筛选规则限制，始终保留（设计决策：
+    // 筛选针对文件内容，目录结构应完整保留以便恢复时重建目录树）。
     std::vector<FileInfo> files = filter.filter(scanned, /*keepDirectories=*/true);
 
     // ---- 4. 加载旧 Manifest，判断是否可增量 ----
@@ -244,10 +250,10 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     }
 
     // ---- 8. 保存 Manifest ----
-    // 关键：只要有文件失败，就不覆盖旧 Manifest，保留上一次完整清单。
-    // 否则失败文件会从清单中消失，恢复时静默缺失。
-    if (res.failed > 0) {
-        log.error(L"BackupManager", L"有 " + std::to_wstring(res.failed) + L" 个失败，不覆盖旧 Manifest（保留上一次完整清单）");
+    // 关键：只要有文件失败或被取消，就不覆盖旧 Manifest，保留上一次完整清单。
+    // 否则失败/未处理的文件会从清单中消失，恢复时静默缺失。
+    if (res.cancelled || res.failed > 0) {
+        log.error(L"BackupManager", L"备份" + (res.cancelled ? L"被取消" : L"有 " + std::to_wstring(res.failed) + L" 个失败") + L"，不覆盖旧 Manifest（保留上一次完整清单）");
         res.success = false;
         appendHistory(config.targetPath, res);
         res.endTime = formatNowWide();

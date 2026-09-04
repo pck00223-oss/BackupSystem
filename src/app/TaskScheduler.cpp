@@ -28,6 +28,7 @@ bool TaskScheduler::removeTask(const std::wstring& name) {
 
 void TaskScheduler::start() {
     if (running_.exchange(true)) return;
+    cancelFlag_.store(false);  // 重置取消标志，支持 stop() 后重新 start()
     thread_ = std::thread([this]() { loop(); });
 }
 

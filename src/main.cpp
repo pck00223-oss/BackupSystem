@@ -102,6 +102,7 @@ void printBackupResult(const BackupResult& res) {
     std::cout << "本次写入 : " << res.backedUp << " 个文件, " << res.totalBytes << " 字节\n";
     std::cout << "失败     : " << res.failed << "\n";
     std::cout << "状态     : " << (res.cancelled ? "已取消" : (res.success ? "成功" : "失败")) << "\n";
+    for (const auto& w : res.warnings) std::cout << "  [警告] " << wideToUtf8(w) << "\n";
     for (const auto& e : res.errors) std::cout << "  [错误] " << wideToUtf8(e) << "\n";
     std::cout << "=============================\n";
 }
@@ -159,12 +160,9 @@ int cmdBackup(const std::vector<std::wstring>& args) {
     const std::wstring schedule = getArg(args, L"--schedule");
     if (!schedule.empty()) config.scheduleTime = schedule;
 
-    // 立即执行一次
-    BackupTask task(config);
-    const BackupResult res = task.run();
-    printBackupResult(res);
-
-    // 如果配置了定时时间（来自配置文件或 --schedule），进入定时守护模式
+    // 有定时配置时进入守护调度模式（不立即执行，由调度器按计划时间触发；
+    // 若启动时已错过当天计划时间，调度器会自动补跑一次）。
+    // 无定时配置时立即执行一次备份。
     if (!config.scheduleTime.empty()) {
         TaskScheduler scheduler;
         scheduler.setCallback([](const std::wstring& name, const BackupResult& r) {
@@ -181,7 +179,13 @@ int cmdBackup(const std::vector<std::wstring>& args) {
                   << " 执行（错过会补跑，Ctrl+C 退出）\n";
         while (scheduler.isRunning()) ::Sleep(1000);
         scheduler.stop();
+        return 0;
     }
+
+    // 立即执行一次
+    BackupTask task(config);
+    const BackupResult res = task.run();
+    printBackupResult(res);
     return (res.success && !res.cancelled) ? 0 : 1;
 }
 

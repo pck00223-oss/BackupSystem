@@ -159,7 +159,7 @@ bool Manifest::loadFromFile(const std::wstring& path, std::string* err) {
         if (err) *err = "unsupported manifest version: " + meta.formatVersion;
         return false;
     }
-    // file_count 与实际条目数不一致时警告（不强制失败，兼容手动编辑）
+    // file_count 与实际条目数不一致时校验失败（作为恢复/增量基准，不允许不一致的清单）
     if (meta.fileCount != 0 && meta.fileCount != entries.size()) {
         if (err) *err = "file_count mismatch: header=" + std::to_string(meta.fileCount) +
                          ", actual=" + std::to_string(entries.size());

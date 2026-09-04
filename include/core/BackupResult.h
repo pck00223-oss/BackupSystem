@@ -28,7 +28,8 @@ struct BackupResult {
     uint64_t totalBytes = 0;    // 本次写入字节数
     std::wstring startTime;     // yyyy-MM-dd HH:mm:ss
     std::wstring endTime;
-    std::vector<std::wstring> errors;  // 失败条目与原因
+    std::vector<std::wstring> errors;    // 失败条目与原因（影响 success）
+    std::vector<std::wstring> warnings;  // 非致命警告（如跳过符号链接，不影响 success）
 };
 
 struct RestoreResult {

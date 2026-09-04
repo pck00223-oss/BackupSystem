@@ -12,16 +12,18 @@ bool FileScanner::scan(const std::wstring& root,
                        std::vector<FileInfo>& outFiles,
                        std::vector<std::wstring>& outErrors,
                        const CancelCheck& cancel,
-                       const ProgressCallback& progress) {
+                       const ProgressCallback& progress,
+                       std::vector<std::wstring>* outWarnings) {
     outFiles.clear();
     outErrors.clear();
+    if (outWarnings) outWarnings->clear();
 
     if (!FileSystem::exists(root) || !FileSystem::isDirectory(root)) {
         outErrors.push_back(std::wstring(L"源路径不存在或不是目录: ") + root);
         return false;
     }
 
-    scanRecursive(root, L"", outFiles, outErrors, cancel, progress);
+    scanRecursive(root, L"", outFiles, outErrors, cancel, progress, outWarnings);
 
     // 按相对路径排序（大小写不敏感，与 Windows 文件系统行为一致）。
     // 注：若课程要求自行实现排序算法，可替换为归并/快排实现（见需求文档 11 节）。
@@ -37,7 +39,8 @@ void FileScanner::scanRecursive(const std::wstring& absRoot,
                                 std::vector<FileInfo>& out,
                                 std::vector<std::wstring>& errors,
                                 const CancelCheck& cancel,
-                                const ProgressCallback& progress) {
+                                const ProgressCallback& progress,
+                                std::vector<std::wstring>* warnings) {
     const std::wstring absDir = relDir.empty() ? absRoot : absRoot + L"\\" + relDir;
 
     std::vector<std::pair<std::wstring, FileType>> entries;
@@ -61,12 +64,15 @@ void FileScanner::scanRecursive(const std::wstring& absRoot,
             continue;
         }
         // 默认跳过 reparse point（junction/目录符号链接），防止递归成环或越界备份。
-        // 如需跟随符号链接，可在此处增加 followSymlinks 选项。
-        if (info.type == FileType::Symlink) continue;
+        // 记录为 warning，避免静默排除导致用户以为备份完整。
+        if (info.type == FileType::Symlink) {
+            if (warnings) warnings->push_back(std::wstring(L"跳过符号链接/联接点: ") + rel);
+            continue;
+        }
         out.push_back(info);
 
         if (info.type == FileType::Directory) {
-            scanRecursive(absRoot, rel, out, errors, cancel, progress);
+            scanRecursive(absRoot, rel, out, errors, cancel, progress, warnings);
         }
     }
 }

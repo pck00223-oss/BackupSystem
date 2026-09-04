@@ -21,11 +21,13 @@ public:
 
     // 扫描 root，输出全部条目（含目录）并按相对路径排序。
     // 根目录不存在/不是目录时返回 false 并写入 outErrors。
+    // outWarnings 可选：记录非致命警告（如跳过符号链接/联接点）。
     static bool scan(const std::wstring& root,
                      std::vector<FileInfo>& outFiles,
                      std::vector<std::wstring>& outErrors,
                      const CancelCheck& cancel = nullptr,
-                     const ProgressCallback& progress = nullptr);
+                     const ProgressCallback& progress = nullptr,
+                     std::vector<std::wstring>* outWarnings = nullptr);
 
 private:
     static void scanRecursive(const std::wstring& absRoot,
@@ -33,7 +35,8 @@ private:
                               std::vector<FileInfo>& out,
                               std::vector<std::wstring>& errors,
                               const CancelCheck& cancel,
-                              const ProgressCallback& progress);
+                              const ProgressCallback& progress,
+                              std::vector<std::wstring>* warnings);
 };
 
 }  // namespace backup

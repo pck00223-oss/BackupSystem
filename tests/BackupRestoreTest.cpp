@@ -7,8 +7,14 @@
 #include "business/BackupManager.h"
 #include "business/Manifest.h"
 #include "business/RestoreManager.h"
+#include "app/TaskScheduler.h"
 #include "core/HashCalculator.h"
 #include "engine/FileSystem.h"
+
+#include <atomic>
+#include <chrono>
+#include <fstream>
+#include <thread>
 
 namespace {
 
@@ -217,4 +223,122 @@ TEST(Backup_Filtered) {
     CHECK(res.success);
     CHECK(res.backedUp == 2);  // a.txt + empty.txt（c.txt 超大小、b.cpp 非 .txt）
     CHECK(!FileSystem::exists(env.target + L"\\data\\b.cpp"));
+}
+
+// 回归测试：源目录 == 目标目录必须被拒绝，否则自我膨胀
+TEST(Backup_SourceEqualsTarget_Rejected) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.src;  // 目标等于源
+    cfg.mode = BackupMode::Full;
+    BackupResult res = BackupManager::run(cfg);
+    CHECK(!res.success);
+    bool found = false;
+    for (const auto& e : res.errors) {
+        if (e.find(L"目标路径不能等于或位于源目录内") != std::wstring::npos) found = true;
+    }
+    CHECK(found);
+}
+
+// 回归测试：取消备份后 Manifest 必须保持旧版，不能保存部分快照
+TEST(Backup_CancelPreservesOldManifest) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    // 第一次全量备份成功
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+    const std::wstring manifestPath = env.target + L"\\manifest.txt";
+    CHECK(FileSystem::exists(manifestPath));
+
+    // 读取旧 Manifest 内容
+    std::ifstream ifs(manifestPath.c_str(), std::ios::binary);
+    std::string oldContent((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    ifs.close();
+
+    // 修改源文件，增量备份时在复制阶段取消
+    testutil::writeFile(env.src + L"a.txt", "modified content");
+    testutil::writeFile(env.src + L"new.txt", "new file");
+    cfg.mode = BackupMode::Incremental;
+
+    // progress 在每个文件复制前调用，第一次调用后置取消标志，
+    // 确保至少进入复制阶段再取消（而非扫描阶段取消）
+    bool cancelNow = false;
+    BackupManager::Options opts;
+    opts.progress = [&](const std::wstring&) { cancelNow = true; };
+    opts.cancelCheck = [&]() { return cancelNow; };
+    BackupResult r2 = BackupManager::run(cfg, opts);
+    CHECK(r2.cancelled);
+    CHECK(!r2.success);
+
+    // Manifest 必须保持旧版（未被覆盖）
+    std::ifstream ifs2(manifestPath.c_str(), std::ios::binary);
+    std::string newContent((std::istreambuf_iterator<char>(ifs2)), std::istreambuf_iterator<char>());
+    ifs2.close();
+    CHECK(oldContent == newContent);
+}
+
+// 回归测试：调度器 stop() 后重新 start()，取消标志必须复位，runNow 能正常执行
+TEST(Scheduler_StopStart_RunNowSucceeds) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    TaskScheduler scheduler;
+    ScheduledTask task;
+    task.name = L"test";
+    task.config = cfg;
+    task.scheduleTime = "23:59";  // 不会自动触发
+    scheduler.addTask(task);
+
+    // start -> stop -> start（模拟 stop 后重新使用调度器）
+    scheduler.start();
+    scheduler.stop();
+    scheduler.start();
+
+    // runNow 应能执行备份（若 cancelFlag 未复位，备份会被立刻取消，manifest 不会生成）
+    scheduler.runNow(L"test");
+    scheduler.stop();
+
+    CHECK(FileSystem::exists(env.target + L"\\manifest.txt"));
+    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
+}
+
+// 回归测试：错过计划时间只补跑一次，不会重复执行
+TEST(Scheduler_MissedTime_RunsOnce) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    TaskScheduler scheduler;
+    std::atomic<int> runCount(0);
+    scheduler.setCallback([&](const std::wstring&, const BackupResult&) {
+        runCount.fetch_add(1);
+    });
+
+    ScheduledTask task;
+    task.name = L"test";
+    task.config = cfg;
+    task.scheduleTime = "00:00";  // 肯定已错过，启动后补跑一次
+    scheduler.addTask(task);
+
+    scheduler.start();
+    // 等待补跑完成（最多 5 秒）
+    for (int i = 0; i < 50 && runCount.load() == 0; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    CHECK(runCount.load() >= 1);
+    // 再等 2 秒，确认不会重复执行
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    scheduler.stop();
+
+    CHECK(runCount.load() == 1);
 }
