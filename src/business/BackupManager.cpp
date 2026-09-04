@@ -272,12 +272,14 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     const bool hasPrevious = previous.loadFromFile(manifestPath, nullptr);
     const bool incremental = (config.mode == BackupMode::Incremental) && hasPrevious;
 
-    // ---- 4b. 增量/全量前校验加密方式+密码一致，防止生成"混血"仓库 ----
-    // 场景：第一次加密备份，第二次不加密/换密码 → 未变化文件用旧加密，变化文件用新加密，恢复时部分解不开。
-    // 全量模式下也做比较，未变化文件会跳过复制，所以同样需要校验。
-    if (hasPrevious) {
-        const bool prevEncrypted = (!previous.meta.encryption.empty() && previous.meta.encryption != "none");
-        const bool curEncrypted = (config.encryption == "aes256") && !config.password.empty();
+    // ---- 4b. 加密方式/密码一致性判断 ----
+    // 增量模式：未变化文件跳过复制，换加密方式/密码会生成混血仓库，必须禁止。
+    // 全量模式：允许换加密方式，但需要强制重新复制所有文件（见比较后的 encryptionChanged 处理）。
+    const bool prevEncrypted = hasPrevious && (!previous.meta.encryption.empty() && previous.meta.encryption != "none");
+    const bool curEncrypted = (config.encryption == "aes256") && !config.password.empty();
+    const bool encryptionChanged = hasPrevious && (prevEncrypted != curEncrypted);
+
+    if (incremental) {
         if (prevEncrypted != curEncrypted) {
             res.success = false;
             const std::wstring msg = std::wstring(L"增量备份失败：加密方式不一致。上一份备份") +
@@ -290,7 +292,6 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
             res.endTime = formatNowWide();
             return res;
         }
-        // 执行到此处说明 prevEncrypted == curEncrypted（否则已在上面返回）
         if (prevEncrypted) {
             const std::string curVerifier = computePasswordVerifier(config.password);
             if (!previous.meta.passwordVerifier.empty() && previous.meta.passwordVerifier != curVerifier) {
@@ -327,6 +328,17 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
             rec.change = FileChangeType::Added;
             changes.push_back(rec);
         }
+    }
+
+    // 全量模式下加密方式变化：所有文件需要重新写入（用新加密方式），
+    // 把 Unchanged 提升为 Modified，确保 data/ 中旧加密数据被覆盖。
+    if (encryptionChanged && !incremental) {
+        for (auto& c : changes) {
+            if (c.change == FileChangeType::Unchanged) {
+                c.change = FileChangeType::Modified;
+            }
+        }
+        log.info(L"BackupManager", L"全量模式加密方式变化，所有文件标记为修改以重新写入");
     }
 
     for (const auto& c : changes) {
