@@ -573,6 +573,39 @@ TEST(CrashRecovery_OldResidual_Committed_Cleaned) {
     CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
 }
 
+// 回归测试：用户的正常 .baktmp.old 文件不被误删
+TEST(CrashRecovery_LegalBaktmpOldFile_NotDeleted) {
+    TestEnv env;
+    // 源目录放一个正常的 .baktmp.old 文件（用户的合法文件）
+    testutil::writeFile(env.src + L"doc.txt.baktmp.old", "this is a normal file with .baktmp.old suffix");
+
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    // 第一次全量备份
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+    CHECK(FileSystem::exists(env.target + L"\\data\\doc.txt.baktmp.old"));
+
+    // verify 不应把合法文件报为残留
+    VerifyResult vr = VerifyManager::run(env.target);
+    CHECK(vr.residual == 0);
+    CHECK(vr.success);
+
+    // 第二次增量备份（触发 recoverResidualData），合法文件不应被删
+    cfg.mode = BackupMode::Incremental;
+    BackupResult r2 = BackupManager::run(cfg);
+    CHECK(r2.success);
+    CHECK(FileSystem::exists(env.target + L"\\data\\doc.txt.baktmp.old"));
+
+    // verify 确认文件仍在，无缺失
+    VerifyResult vr2 = VerifyManager::run(env.target);
+    CHECK(vr2.missing == 0);
+    CHECK(vr2.success);
+}
+
 // 回归测试：verify 取消回调能中止校验
 TEST(Verify_CancelCheck_Aborts) {
     TestEnv env;

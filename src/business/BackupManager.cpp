@@ -429,6 +429,10 @@ void BackupManager::recoverResidualData(const std::wstring& targetPath) {
         const std::wstring& name = e.name;
         const std::wstring fullPath = dataDir + L"\\" + e.relativePath;
 
+        // Manifest 白名单：如果该路径本身就是 Manifest 中的合法备份条目，
+        // 则绝不能当作崩溃残留处理（用户的正常文件可能命名为 xxx.baktmp.old）。
+        if (manifestLoaded && manifest.find(e.relativePath)) continue;
+
         // 1. .baktmp.old*：被移走的旧数据，需结合 Manifest 判断是否已提交
         const std::wstring originalName = parseOldResidual(name);
         if (!originalName.empty()) {
