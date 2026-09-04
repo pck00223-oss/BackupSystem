@@ -82,6 +82,7 @@ endif()
 
 # ============ 核心库（分层：core / engine / business / app）============
 add_library(backup_core STATIC
+    src/core/BackupLock.cpp
     src/core/Error.cpp
     src/core/HashCalculator.cpp
     src/core/Logger.cpp

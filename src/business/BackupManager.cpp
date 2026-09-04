@@ -10,6 +10,7 @@
 #include "business/FileComparator.h"
 #include "business/FileFilter.h"
 #include "business/Manifest.h"
+#include "core/BackupLock.h"
 #include "core/HashCalculator.h"
 #include "core/Logger.h"
 #include "core/ResidualUtil.h"
@@ -101,6 +102,15 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     if (!FileSystem::createDirectories(config.targetPath)) {
         res.errors.push_back(std::wstring(L"无法创建目标目录: ") + config.targetPath);
         log.error(L"BackupManager", L"无法创建目标目录: " + config.targetPath);
+        res.endTime = formatNowWide();
+        return res;
+    }
+
+    // ---- 单一实例锁：防止计划任务与手动备份同时写同一 target ----
+    BackupLockGuard lock(config.targetPath);
+    if (!lock.acquired()) {
+        res.errors.push_back(utf8ToWide(lock.error()));
+        log.error(L"BackupManager", utf8ToWide(lock.error()));
         res.endTime = formatNowWide();
         return res;
     }

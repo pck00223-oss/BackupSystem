@@ -684,6 +684,39 @@ TEST(CrashRecovery_NoManifest_NoAutoDelete) {
     CHECK(!FileSystem::exists(residual));
 }
 
+// 回归测试：单一实例锁 - 并发备份被拒绝，崩溃残留锁自动清理
+TEST(BackupLock_ConcurrentBackup_Rejected) {
+    TestEnv env;
+    BackupConfig cfg;
+    cfg.sourcePath = env.src;
+    cfg.targetPath = env.target;
+    cfg.mode = BackupMode::Full;
+
+    // 第一次备份成功
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+
+    // 模拟崩溃残留：创建锁文件，写入一个不存在的 PID
+    testutil::writeFile(env.target + L"\\.backup.lock", "999999\n");
+    // 第二次备份应成功（自动清理崩溃残留的锁）
+    BackupResult r2 = BackupManager::run(cfg);
+    CHECK(r2.success);
+    CHECK(!FileSystem::exists(env.target + L"\\.backup.lock"));
+
+    // 模拟另一个备份正在运行：创建锁文件，写入当前进程 PID
+    const DWORD pid = GetCurrentProcessId();
+    testutil::writeFile(env.target + L"\\.backup.lock", std::to_string(pid) + "\n");
+    // 第三次备份应失败（被锁拒绝）
+    BackupResult r3 = BackupManager::run(cfg);
+    CHECK(!r3.success);
+    CHECK(r3.errors.size() > 0);
+    // 锁文件应仍然存在
+    CHECK(FileSystem::exists(env.target + L"\\.backup.lock"));
+
+    // 清理锁文件
+    FileSystem::deleteFile(env.target + L"\\.backup.lock");
+}
+
 // 回归测试：用户的正常 .baktmp.old 文件不被误删
 TEST(CrashRecovery_LegalBaktmpOldFile_NotDeleted) {
     TestEnv env;
