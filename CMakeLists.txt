@@ -133,11 +133,13 @@ enable_testing()
 add_executable(backup_tests
     tests/TestMain.cpp
     tests/TimeUtilTest.cpp
+    tests/GuiTaskStoreTest.cpp
     tests/HashCalculatorTest.cpp
     tests/ManifestTest.cpp
     tests/FileComparatorTest.cpp
     tests/FileFilterTest.cpp
     tests/BackupRestoreTest.cpp
+    src/gui/TaskStore.cpp
 )
-target_link_libraries(backup_tests PRIVATE backup_core backup_flags)
+target_link_libraries(backup_tests PRIVATE backup_core backup_flags crypt32)
 add_test(NAME backup_tests COMMAND backup_tests)

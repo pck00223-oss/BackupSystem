@@ -5,6 +5,7 @@
 #include "business/BackupManager.h"
 
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 
 #include "business/FileComparator.h"
@@ -38,17 +39,9 @@ std::wstring BackupManager::historyPathOf(const std::wstring& target) {
 // 加密文件格式：前 16 字节 IV，后续密文（PKCS7 填充）。
 static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
                                 const std::string& password, std::string& err) {
-    // 读取源文件
     std::ifstream ifs(src.c_str(), std::ios::binary);
     if (!ifs) { err = "cannot open source file"; return false; }
-    std::vector<uint8_t> plain((std::istreambuf_iterator<char>(ifs)),
-                                 std::istreambuf_iterator<char>());
-    ifs.close();
-
-    // 加密
     AesEncryptor aes(password);
-    std::vector<uint8_t> cipher = aes.encrypt(plain.data(), plain.size());
-    if (cipher.empty()) { err = "encryption failed"; return false; }
 
     // 写入目标（用 GetTempFileNameW 生成唯一临时文件名，避免与合法文件撞名，再原子替换）
     const size_t pos = dst.find_last_of(L"\\/");
@@ -61,7 +54,51 @@ static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
     const std::wstring tmp(tmpPath);
     std::ofstream ofs(tmp.c_str(), std::ios::binary | std::ios::trunc);
     if (!ofs) { err = "cannot open temp file for write"; ::DeleteFileW(tmp.c_str()); return false; }
-    ofs.write(reinterpret_cast<const char*>(cipher.data()), static_cast<std::streamsize>(cipher.size()));
+
+    // IV(16) + CBC 流式加密（分块读入，避免大文件占满内存）
+    uint8_t iv[16] = {};
+    AesEncryptor::generateRandomIv(iv);
+    ofs.write(reinterpret_cast<const char*>(iv), 16);
+
+    uint8_t prev[16] = {};
+    std::memcpy(prev, iv, 16);
+
+    constexpr size_t kChunkSize = 1024 * 1024;
+    std::vector<uint8_t> readBuf(kChunkSize);
+    std::vector<uint8_t> pending;
+    std::vector<uint8_t> cipher;
+    pending.reserve(kChunkSize + 32);
+
+    while (ifs) {
+        ifs.read(reinterpret_cast<char*>(readBuf.data()),
+                 static_cast<std::streamsize>(readBuf.size()));
+        const std::streamsize got = ifs.gcount();
+        if (got > 0) {
+            pending.insert(pending.end(), readBuf.begin(), readBuf.begin() + got);
+        }
+        const size_t full = pending.size() - pending.size() % 16;
+        if (full > 0) {
+            cipher.resize(full);
+            aes.encryptCbcBlocks(pending.data(), full / 16, cipher.data(), prev);
+            ofs.write(reinterpret_cast<const char*>(cipher.data()),
+                      static_cast<std::streamsize>(cipher.size()));
+            pending.erase(pending.begin(), pending.begin() + static_cast<ptrdiff_t>(full));
+        }
+        if (!ifs && !ifs.eof()) {
+            ofs.close();
+            ::DeleteFileW(tmp.c_str());
+            err = "read source file failed";
+            return false;
+        }
+    }
+
+    // PKCS7 填充最后一块并加密
+    const size_t padLen = 16 - pending.size() % 16;
+    for (size_t i = 0; i < padLen; ++i) pending.push_back(static_cast<uint8_t>(padLen));
+    cipher.resize(pending.size());
+    aes.encryptCbcBlocks(pending.data(), pending.size() / 16, cipher.data(), prev);
+    ofs.write(reinterpret_cast<const char*>(cipher.data()),
+              static_cast<std::streamsize>(cipher.size()));
     ofs.flush();
     if (!ofs) { ofs.close(); ::DeleteFileW(tmp.c_str()); err = "write encrypted file failed"; return false; }
     ofs.close();

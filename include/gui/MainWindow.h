@@ -103,15 +103,17 @@ private:
         MainWindow* self = nullptr;
         BackupTask task;
         std::wstring restorePath;  // 恢复时使用
+        bool restoreOverwrite = true;  // 恢复时是否覆盖已存在且不同的文件
         enum class Op { Backup, Restore, Verify } op = Op::Backup;
     };
 
     // 启动 worker 线程：关闭旧句柄、创建新线程、失败时回滚 busy 状态。
-    void startWorker(WorkerParam::Op op, const BackupTask& task, const std::wstring& restorePath = L"");
+    void startWorker(WorkerParam::Op op, const BackupTask& task,
+                     const std::wstring& restorePath = L"", bool restoreOverwrite = true);
 
     static DWORD WINAPI workerThreadProc(LPVOID param);
     void runBackup(const BackupTask& task);
-    void runRestore(const BackupTask& task, const std::wstring& restorePath);
+    void runRestore(const BackupTask& task, const std::wstring& restorePath, bool overwrite);
     void runVerify(const BackupTask& task);
 
     // ---- 日志与状态 ----
@@ -128,6 +130,9 @@ private:
     // 简单输入对话框（用于恢复目标路径等）。
     bool showInputDialog(const std::wstring& title, const std::wstring& prompt,
                          const std::wstring& defaultValue, std::wstring& outValue);
+
+    // 恢复设置对话框：返回目标目录与覆盖策略。
+    bool showRestoreDialog(std::wstring& outPath, bool& outOverwrite);
 };
 
 }  // namespace gui

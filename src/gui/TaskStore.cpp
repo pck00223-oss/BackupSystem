@@ -40,7 +40,7 @@ std::wstring TaskStore::storePath() {
 std::string TaskStore::encryptPassword(const std::string& passwordUtf8) {
     if (passwordUtf8.empty()) return "";
     DATA_BLOB in, out;
-    in.pbData = (BYTE*)passwordUtf8.data();
+    in.pbData = reinterpret_cast<BYTE*>(const_cast<char*>(passwordUtf8.data()));
     in.cbData = (DWORD)passwordUtf8.size();
     if (!CryptProtectData(&in, L"BackupSystem_Password", nullptr, nullptr, nullptr, 0, &out)) {
         return "";
@@ -70,14 +70,14 @@ std::string TaskStore::decryptPassword(const std::string& hexEncrypted) {
     if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr, 0, &out)) {
         return "";
     }
-    std::string password((char*)out.pbData, out.cbData);
+    std::string password(reinterpret_cast<const char*>(out.pbData), out.cbData);
     LocalFree(out.pbData);
     return password;
 }
 
-std::vector<BackupTask> TaskStore::load() {
+std::vector<BackupTask> TaskStore::loadFrom(const std::wstring& path) {
     std::vector<BackupTask> tasks;
-    std::ifstream file(wideToUtf8(storePath()));
+    std::ifstream file(wideToUtf8(path));
     if (!file.is_open()) return tasks;
 
     std::string line;
@@ -110,8 +110,12 @@ std::vector<BackupTask> TaskStore::load() {
     return tasks;
 }
 
-bool TaskStore::save(const std::vector<BackupTask>& tasks) {
-    std::ofstream file(wideToUtf8(storePath()), std::ios::trunc);
+std::vector<BackupTask> TaskStore::load() {
+    return loadFrom(storePath());
+}
+
+bool TaskStore::saveTo(const std::wstring& path, const std::vector<BackupTask>& tasks) {
+    std::ofstream file(wideToUtf8(path), std::ios::trunc);
     if (!file.is_open()) return false;
 
     for (const auto& task : tasks) {
@@ -125,6 +129,10 @@ bool TaskStore::save(const std::vector<BackupTask>& tasks) {
              << task.keepSnapshots << '\n';
     }
     return true;
+}
+
+bool TaskStore::save(const std::vector<BackupTask>& tasks) {
+    return saveTo(storePath(), tasks);
 }
 
 }  // namespace gui

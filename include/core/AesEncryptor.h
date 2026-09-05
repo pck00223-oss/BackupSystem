@@ -41,6 +41,14 @@ public:
         return std::string(reinterpret_cast<const char*>(plain.data()), plain.size());
     }
 
+    // ---- CBC 流式处理（大文件分块加密/解密用）----
+    // 生成 16 字节随机 IV。
+    static void generateRandomIv(uint8_t iv[16]);
+    // 加密若干完整 16 字节块；prev 为 CBC 前一个密文块，调用后更新为最后一个密文块。
+    void encryptCbcBlocks(const uint8_t* in, size_t blocks, uint8_t* out, uint8_t prev[16]) const;
+    // 解密若干完整 16 字节块；prev 语义同上。
+    void decryptCbcBlocks(const uint8_t* in, size_t blocks, uint8_t* out, uint8_t prev[16]) const;
+
 private:
     // AES 块大小（16 字节）
     static constexpr size_t BLOCK_SIZE = 16;

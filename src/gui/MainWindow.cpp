@@ -9,6 +9,7 @@
 
 #include "business/BackupManager.h"
 #include "business/RestoreManager.h"
+#include "business/SnapshotManager.h"
 #include "business/VerifyManager.h"
 #include "core/Utf.h"
 
@@ -20,6 +21,7 @@ namespace gui {
 // ============ 前置声明 ============
 static INT_PTR CALLBACK newTaskDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
 static INT_PTR CALLBACK inputDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
+static INT_PTR CALLBACK restoreDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace {
 constexpr int kHeaderHeight = 72;
@@ -91,6 +93,10 @@ HWND MainWindow::create(HINSTANCE hInstance) {
     dlgWC.lpszClassName = L"InputDlg";
     RegisterClassExW(&dlgWC);
 
+    dlgWC.lpfnWndProc = (WNDPROC)restoreDlgProc;
+    dlgWC.lpszClassName = L"RestoreDlg";
+    RegisterClassExW(&dlgWC);
+
     // 创建窗口
     hwnd_ = CreateWindowExW(
         0, L"BackupSystemMainWindow", L"BackupSystem - 数据备份工具",
@@ -109,12 +115,12 @@ HWND MainWindow::create(HINSTANCE hInstance) {
 LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     MainWindow* self = nullptr;
     if (msg == WM_NCCREATE) {
-        auto* cs = (CREATESTRUCTW*)lParam;
-        self = (MainWindow*)cs->lpCreateParams;
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        self = reinterpret_cast<MainWindow*>(cs->lpCreateParams);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)self);
         self->hwnd_ = hwnd;
     } else {
-        self = (MainWindow*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+        self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
 
     if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -133,7 +139,7 @@ LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         }
 
         case WM_GETMINMAXINFO: {
-            auto* mmi = (MINMAXINFO*)lParam;
+            auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
             mmi->ptMinTrackSize.x = 780;
             mmi->ptMinTrackSize.y = 520;
             return 0;
@@ -141,7 +147,7 @@ LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
         case WM_CTLCOLORSTATIC: {
             HDC hdc = (HDC)wParam;
-            HWND ctl = (HWND)lParam;
+            HWND ctl = reinterpret_cast<HWND>(lParam);
             const int id = (int)GetDlgCtrlID(ctl);
             SetBkMode(hdc, TRANSPARENT);
             if (id == IDC_TITLE) {
@@ -187,7 +193,7 @@ LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         }
 
         case WM_LOG_MSG: {
-            auto* text = (wchar_t*)lParam;
+            auto* text = reinterpret_cast<wchar_t*>(lParam);
             if (text) {
                 self->appendLog(std::wstring(text));
                 delete[] text;
@@ -234,7 +240,7 @@ void MainWindow::createControls() {
 
     // 按钮（统一字体与 Tab 顺序）
     struct Btn { int id; const wchar_t* text; };
-    Btn buttons[] = {
+    const Btn buttons[] = {
         {IDC_BTN_NEW, L"新建任务"},
         {IDC_BTN_BACKUP, L"立即备份"},
         {IDC_BTN_RESTORE, L"恢复"},
@@ -390,14 +396,15 @@ void MainWindow::onDeleteTask() {
 }
 
 // ============ 操作执行入口 ============
-void MainWindow::startWorker(WorkerParam::Op op, const BackupTask& task, const std::wstring& restorePath) {
+void MainWindow::startWorker(WorkerParam::Op op, const BackupTask& task,
+                             const std::wstring& restorePath, bool restoreOverwrite) {
     // 关闭上一次的线程句柄（避免泄漏）
     if (workerThread_) {
         CloseHandle(workerThread_);
         workerThread_ = nullptr;
     }
 
-    auto* param = new WorkerParam{this, task, restorePath, op};
+    auto* param = new WorkerParam{this, task, restorePath, restoreOverwrite, op};
     HANDLE h = CreateThread(nullptr, 0, workerThreadProc, param, 0, nullptr);
     if (!h) {
         // 创建线程失败，回滚 busy 状态
@@ -428,14 +435,15 @@ void MainWindow::onRestore() {
     if (selectedIndex_ < 0) { MessageBoxW(hwnd_, L"请先选择一个任务。", L"提示", MB_OK); return; }
 
     std::wstring restorePath;
-    if (!showInputDialog(L"恢复备份", L"请输入恢复目标目录:", L"", restorePath)) return;
+    bool overwrite = true;
+    if (!showRestoreDialog(restorePath, overwrite)) return;
 
     const auto& task = tasks_[selectedIndex_];
     setBusy(true);
     setStatus(L"恢复中...");
     appendLog(L"========== 开始恢复: " + task.name + L" -> " + restorePath + L" ==========");
 
-    startWorker(WorkerParam::Op::Restore, task, restorePath);
+    startWorker(WorkerParam::Op::Restore, task, restorePath, overwrite);
 }
 
 void MainWindow::onVerify() {
@@ -460,7 +468,7 @@ void MainWindow::onCancel() {
 
 // ============ 后台线程 ============
 DWORD WINAPI MainWindow::workerThreadProc(LPVOID param) {
-    auto* p = (WorkerParam*)param;
+    auto* p = reinterpret_cast<WorkerParam*>(param);
     MainWindow* self = p->self;
     self->cancelFlag_ = false;
 
@@ -468,7 +476,7 @@ DWORD WINAPI MainWindow::workerThreadProc(LPVOID param) {
         if (p->op == WorkerParam::Op::Backup) {
             self->runBackup(p->task);
         } else if (p->op == WorkerParam::Op::Restore) {
-            self->runRestore(p->task, p->restorePath);
+            self->runRestore(p->task, p->restorePath, p->restoreOverwrite);
         } else if (p->op == WorkerParam::Op::Verify) {
             self->runVerify(p->task);
         }
@@ -503,11 +511,11 @@ void MainWindow::runBackup(const BackupTask& task) {
     PostMessageW(hwnd_, WM_BACKUP_DONE, res.success ? 1 : 0, 0);
 }
 
-void MainWindow::runRestore(const BackupTask& task, const std::wstring& restorePath) {
+void MainWindow::runRestore(const BackupTask& task, const std::wstring& restorePath, bool overwrite) {
     RestoreConfig cfg;
     cfg.backupRoot = task.targetPath;
     cfg.restorePath = restorePath;
-    cfg.overwrite = true;
+    cfg.overwrite = overwrite;
     cfg.password = task.password;
 
     RestoreResult res = RestoreManager::run(cfg,
@@ -530,17 +538,37 @@ void MainWindow::runVerify(const BackupTask& task) {
     opts.cancelCheck = [this]() { return cancelFlag_.load(); };
     opts.progress = [this](const std::wstring& path) { postLog(L"  校验: " + path); };
 
+    // 1. 校验根目录 data/
     VerifyResult res = VerifyManager::run(task.targetPath, opts);
 
-    postLog(L"---------- 校验结果 ----------");
-    postLog(L"  总数: " + std::to_wstring(res.total));
-    postLog(L"  通过: " + std::to_wstring(res.passed) + L"  缺失: " + std::to_wstring(res.missing) +
-            L"  损坏: " + std::to_wstring(res.corrupted) + L"  残留: " + std::to_wstring(res.residual));
-    postLog(L"  状态: " + std::wstring(res.success ? L"完整" : L"不完整"));
+    bool allOk = res.success;
+    postLog(L"---------- 根目录校验 ----------");
+    postLog(L"  总数: " + std::to_wstring(res.total) + L"  通过: " + std::to_wstring(res.passed) +
+            L"  缺失: " + std::to_wstring(res.missing) + L"  损坏: " + std::to_wstring(res.corrupted) +
+            L"  残留: " + std::to_wstring(res.residual) +
+            L"  状态: " + std::wstring(res.success ? L"完整" : L"不完整"));
     for (const auto& err : res.errors) postLog(L"  [错误] " + err);
+
+    // 2. 逐份校验快照（快照只读，不做 repair）
+    const std::vector<SnapshotInfo> snaps = SnapshotManager::listSnapshots(task.targetPath);
+    if (!snaps.empty()) {
+        postLog(L"---------- 快照校验 (" + std::to_wstring(snaps.size()) + L" 份) ----------");
+    }
+    for (const auto& s : snaps) {
+        VerifyResult vr = VerifyManager::run(s.path, opts);
+        allOk = allOk && vr.success;
+        postLog(L"  快照 " + s.timestamp + L": 文件 " + std::to_wstring(vr.total) +
+                L" 通过 " + std::to_wstring(vr.passed) +
+                L" 缺失 " + std::to_wstring(vr.missing) +
+                L" 损坏 " + std::to_wstring(vr.corrupted) +
+                L" 残留 " + std::to_wstring(vr.residual) +
+                L" 状态: " + std::wstring(vr.success ? L"完整" : L"不完整"));
+        for (const auto& err : vr.errors) postLog(L"    [错误] " + err);
+    }
+    postLog(L"========== 校验总状态: " + std::wstring(allOk ? L"完整" : L"不完整") + L" ==========");
     postLog(L"================================");
 
-    PostMessageW(hwnd_, WM_VERIFY_DONE, res.success ? 1 : 0, 0);
+    PostMessageW(hwnd_, WM_VERIFY_DONE, allOk ? 1 : 0, 0);
 }
 
 // ============ 日志与状态 ============
@@ -604,7 +632,7 @@ struct NewTaskDlgData {
 };
 
 static INT_PTR CALLBACK newTaskDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam) {
-    auto* data = (NewTaskDlgData*)GetWindowLongPtrW(hDlg, GWLP_USERDATA);
+    auto* data = reinterpret_cast<NewTaskDlgData*>(GetWindowLongPtrW(hDlg, GWLP_USERDATA));
 
     switch (msg) {
         case WM_CLOSE:
@@ -612,7 +640,7 @@ static INT_PTR CALLBACK newTaskDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARA
             DestroyWindow(hDlg);
             return 0;
         case WM_INITDIALOG: {
-            data = (NewTaskDlgData*)lParam;
+            data = reinterpret_cast<NewTaskDlgData*>(lParam);
             SetWindowLongPtrW(hDlg, GWLP_USERDATA, (LONG_PTR)data);
 
             // 创建控件
@@ -815,6 +843,107 @@ void MainWindow::onNewTask() {
 }
 
 // ============ 简单输入对话框 ============
+namespace {
+enum RestoreDlgCtrl : int {
+    IDC_RESTORE_PATH = 3001,
+    IDC_RESTORE_OVERWRITE = 3002,
+};
+}
+
+struct RestoreDlgData {
+    std::wstring* outPath = nullptr;
+    bool* outOverwrite = nullptr;
+    HWND hEdit = nullptr;
+    HWND hCheck = nullptr;
+};
+
+static INT_PTR CALLBACK restoreDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto* data = reinterpret_cast<RestoreDlgData*>(GetWindowLongPtrW(hDlg, GWLP_USERDATA));
+
+    switch (msg) {
+        case WM_INITDIALOG: {
+            data = reinterpret_cast<RestoreDlgData*>(lParam);
+            SetWindowLongPtrW(hDlg, GWLP_USERDATA, (LONG_PTR)data);
+
+            CreateWindowExW(0, L"STATIC", L"恢复目标目录:", WS_CHILD | WS_VISIBLE,
+                            12, 12, 120, 18, hDlg, nullptr, nullptr, nullptr);
+            data->hEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+                12, 32, 360, 24, hDlg, (HMENU)IDC_RESTORE_PATH, nullptr, nullptr);
+            data->hCheck = CreateWindowExW(0, L"BUTTON", L"覆盖已存在且内容不同的文件",
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                12, 64, 280, 22, hDlg, (HMENU)IDC_RESTORE_OVERWRITE, nullptr, nullptr);
+            SendMessageW(data->hCheck, BM_SETCHECK, BST_CHECKED, 0);
+
+            CreateWindowExW(0, L"BUTTON", L"确定", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+                            110, 100, 80, 28, hDlg, (HMENU)IDOK, nullptr, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"取消", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                            210, 100, 80, 28, hDlg, (HMENU)IDCANCEL, nullptr, nullptr);
+
+            SetFocus(data->hEdit);
+            return 0;
+        }
+        case WM_COMMAND: {
+            const int id = LOWORD(wParam);
+            if (id == IDOK) {
+                wchar_t path[MAX_PATH] = {};
+                GetWindowTextW(data->hEdit, path, MAX_PATH);
+                if (wcslen(path) == 0) {
+                    MessageBoxW(hDlg, L"请输入恢复目标目录。", L"提示", MB_OK | MB_ICONWARNING);
+                    return TRUE;
+                }
+                *data->outPath = path;
+                *data->outOverwrite =
+                    (SendMessageW(data->hCheck, BM_GETCHECK, 0, 0) == BST_CHECKED);
+                DestroyWindow(hDlg);
+                return TRUE;
+            }
+            if (id == IDCANCEL) {
+                data->outPath->clear();
+                DestroyWindow(hDlg);
+                return TRUE;
+            }
+            return TRUE;
+        }
+        default:
+            return DefWindowProcW(hDlg, msg, wParam, lParam);
+    }
+}
+
+bool MainWindow::showRestoreDialog(std::wstring& outPath, bool& outOverwrite) {
+    outPath.clear();
+    outOverwrite = true;
+
+    RestoreDlgData data;
+    data.outPath = &outPath;
+    data.outOverwrite = &outOverwrite;
+
+    HWND hDlg = CreateWindowExW(
+        WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE,
+        L"RestoreDlg", L"恢复备份",
+        WS_POPUPWINDOW | WS_CAPTION,
+        CW_USEDEFAULT, CW_USEDEFAULT, 400, 160,
+        hwnd_, nullptr, hInstance_, nullptr);
+    if (!hDlg) return false;
+
+    SetWindowLongPtrW(hDlg, GWLP_USERDATA, (LONG_PTR)&data);
+    SendMessageW(hDlg, WM_INITDIALOG, 0, (LPARAM)&data);
+    ShowWindow(hDlg, SW_SHOW);
+    EnableWindow(hwnd_, FALSE);
+
+    MSG msg;
+    while (GetMessageW(&msg, nullptr, 0, 0)) {
+        if (!IsDialogMessageW(hDlg, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        if (!IsWindow(hDlg)) break;
+    }
+    EnableWindow(hwnd_, TRUE);
+    SetForegroundWindow(hwnd_);
+    return !outPath.empty();
+}
+
 struct InputDlgData {
     const wchar_t* title = nullptr;
     const wchar_t* prompt = nullptr;
@@ -825,7 +954,7 @@ struct InputDlgData {
 };
 
 static INT_PTR CALLBACK inputDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam) {
-    auto* data = (InputDlgData*)GetWindowLongPtrW(hDlg, GWLP_USERDATA);
+    auto* data = reinterpret_cast<InputDlgData*>(GetWindowLongPtrW(hDlg, GWLP_USERDATA));
 
     switch (msg) {
         case WM_CLOSE:
@@ -833,7 +962,7 @@ static INT_PTR CALLBACK inputDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
             DestroyWindow(hDlg);
             return 0;
         case WM_INITDIALOG: {
-            data = (InputDlgData*)lParam;
+            data = reinterpret_cast<InputDlgData*>(lParam);
             SetWindowLongPtrW(hDlg, GWLP_USERDATA, (LONG_PTR)data);
             data->confirmed = false;
             SetWindowTextW(hDlg, data->title);

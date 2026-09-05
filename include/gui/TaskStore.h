@@ -35,6 +35,11 @@ public:
     // 保存所有任务（覆盖写入）。
     static bool save(const std::vector<BackupTask>& tasks);
 
+    // 从指定文件加载（测试用，可避免污染真实任务文件）。
+    static std::vector<BackupTask> loadFrom(const std::wstring& path);
+    // 保存到指定文件（测试用）。
+    static bool saveTo(const std::wstring& path, const std::vector<BackupTask>& tasks);
+
     // 获取存储文件路径。
     static std::wstring storePath();
 

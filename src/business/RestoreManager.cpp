@@ -2,6 +2,10 @@
 // 流程（需求文档 7.2）：读取 Manifest -> 创建目录 -> 恢复文件 -> 恢复元数据 -> Hash 校验
 #include "business/RestoreManager.h"
 
+#include <algorithm>
+#include <cstring>
+#include <fstream>
+
 #include "business/Manifest.h"
 #include "business/SnapshotManager.h"
 #include "core/AesEncryptor.h"
@@ -21,14 +25,12 @@ bool decryptAndWriteFile(const std::wstring& src, const std::wstring& dst,
                           const std::string& password, std::string& err) {
     std::ifstream ifs(src.c_str(), std::ios::binary);
     if (!ifs) { err = "cannot open encrypted file"; return false; }
-    std::vector<uint8_t> cipher((std::istreambuf_iterator<char>(ifs)),
-                                  std::istreambuf_iterator<char>());
-    ifs.close();
 
     AesEncryptor aes(password);
-    bool decryptOk = false;
-    std::vector<uint8_t> plain = aes.decrypt(cipher.data(), cipher.size(), &decryptOk);
-    if (!decryptOk) { err = "decryption failed (wrong password or corrupted data)"; return false; }
+
+    uint8_t iv[16] = {};
+    ifs.read(reinterpret_cast<char*>(iv), 16);
+    if (ifs.gcount() != 16) { err = "encrypted file is too short"; return false; }
 
     // 用 GetTempFileNameW 生成唯一临时文件名，避免与合法文件撞名，再原子替换
     const size_t pos = dst.find_last_of(L"\\/");
@@ -41,7 +43,66 @@ bool decryptAndWriteFile(const std::wstring& src, const std::wstring& dst,
     const std::wstring tmp(tmpPath);
     std::ofstream ofs(tmp.c_str(), std::ios::binary | std::ios::trunc);
     if (!ofs) { err = "cannot open temp file for write"; ::DeleteFileW(tmp.c_str()); return false; }
-    ofs.write(reinterpret_cast<const char*>(plain.data()), static_cast<std::streamsize>(plain.size()));
+
+    uint8_t prev[16] = {};
+    std::memcpy(prev, iv, 16);
+
+    constexpr size_t kChunkSize = 1024 * 1024;
+    std::vector<uint8_t> readBuf(kChunkSize);
+    std::vector<uint8_t> pending;
+    std::vector<uint8_t> plain;
+    pending.reserve(kChunkSize + 32);
+
+    while (ifs) {
+        ifs.read(reinterpret_cast<char*>(readBuf.data()),
+                 static_cast<std::streamsize>(readBuf.size()));
+        const std::streamsize got = ifs.gcount();
+        if (got > 0) {
+            pending.insert(pending.end(), readBuf.begin(), readBuf.begin() + got);
+        }
+        // 保留最后一个完整块用于校验 PKCS7 填充，其余先解密写出
+        while (pending.size() >= 32) {
+            const size_t processable = pending.size() - 16;
+            plain.resize(processable);
+            aes.decryptCbcBlocks(pending.data(), processable / 16,
+                                 plain.data(), prev);
+            ofs.write(reinterpret_cast<const char*>(plain.data()),
+                      static_cast<std::streamsize>(plain.size()));
+            pending.erase(pending.begin(),
+                          pending.begin() + static_cast<ptrdiff_t>(processable));
+        }
+        if (!ifs && !ifs.eof()) {
+            ofs.close();
+            ::DeleteFileW(tmp.c_str());
+            err = "read encrypted file failed";
+            return false;
+        }
+    }
+
+    // 末尾应恰好剩一个完整密文块
+    if (pending.size() != 16) {
+        ofs.close();
+        ::DeleteFileW(tmp.c_str());
+        err = "encrypted data length is invalid";
+        return false;
+    }
+    plain.resize(16);
+    aes.decryptCbcBlocks(pending.data(), 1, plain.data(), prev);
+    const uint8_t pad = plain[15];
+    if (pad == 0 || pad > 16) {
+        ofs.close();
+        ::DeleteFileW(tmp.c_str());
+        err = "decryption failed (wrong password or corrupted data)";
+        return false;
+    }
+    if (!std::all_of(plain.begin() + (16 - pad), plain.end(),
+                     [pad](uint8_t b) { return b == pad; })) {
+        ofs.close();
+        ::DeleteFileW(tmp.c_str());
+        err = "decryption failed (wrong password or corrupted data)";
+        return false;
+    }
+    ofs.write(reinterpret_cast<const char*>(plain.data()), 16 - pad);
     ofs.flush();
     if (!ofs) { ofs.close(); ::DeleteFileW(tmp.c_str()); err = "write decrypted file failed"; return false; }
     ofs.close();

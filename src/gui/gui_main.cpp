@@ -13,10 +13,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         HMODULE user32 = ::LoadLibraryW(L"user32.dll");
         if (user32) {
             using SetDpiCtxFn = BOOL(WINAPI*)(void*);
-            auto setDpi = (SetDpiCtxFn)::GetProcAddress(user32, "SetProcessDpiAwarenessContext");
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+#endif
+            auto setDpi = reinterpret_cast<SetDpiCtxFn>(
+                ::GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
             if (setDpi) {
-                // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
-                setDpi(reinterpret_cast<void*>(-4));
+#ifdef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+                setDpi(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+#else
+                setDpi(nullptr);  // 旧系统回退为系统 DPI 感知（仅占位，随后调用 SetProcessDPIAware）
+#endif
             } else {
                 ::SetProcessDPIAware();
             }

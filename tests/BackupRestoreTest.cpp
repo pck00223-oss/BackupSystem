@@ -1005,6 +1005,48 @@ TEST(Encryption_IncrementWithDifferentPassword_Rejected) {
     testutil::removeAll(tgt);
 }
 
+// 回归测试：大文件（跨多个 1MB 分块）流式加密/解密往返
+TEST(Encryption_LargeFileStreaming_RoundTrip) {
+    const std::wstring src = testutil::makeTempDir(L"enc_large_src");
+    const std::wstring tgt = testutil::makeTempDir(L"enc_large_tgt");
+
+    // 3MB + 37 字节，确保跨越多个分块且最后一块不完整
+    std::string big(3 * 1024 * 1024 + 37, 'x');
+    big.replace(0, 8, "HEADDATA");
+    testutil::writeFile(src + L"big.bin", big);
+
+    BackupConfig cfg;
+    cfg.sourcePath = src;
+    cfg.targetPath = tgt;
+    cfg.mode = BackupMode::Full;
+    cfg.encryption = "aes256";
+    cfg.password = "streamtest";
+    BackupResult r1 = BackupManager::run(cfg);
+    CHECK(r1.success);
+    CHECK(r1.backedUp == 1);
+
+    // verify 应通过（密文 Hash 校验）
+    VerifyResult vr = VerifyManager::run(tgt);
+    CHECK(vr.success);
+
+    // 恢复后应与源完全一致
+    RestoreConfig rcfg;
+    rcfg.backupRoot = tgt;
+    rcfg.restorePath = tgt + L"\\restore";
+    rcfg.overwrite = true;
+    rcfg.password = "streamtest";
+    RestoreResult rr = RestoreManager::run(rcfg);
+    CHECK(rr.success);
+    CHECK(rr.verified == 1);
+
+    std::string restored = testutil::readFile(rcfg.restorePath + L"\\big.bin");
+    CHECK_EQ(restored.size(), big.size());
+    CHECK(restored == big);
+
+    testutil::removeAll(src);
+    testutil::removeAll(tgt);
+}
+
 // 回归测试：verify --repair 自动修复损坏文件
 TEST(Verify_Repair_CorruptedFile_RebuiltFromSource) {
     TestEnv env;

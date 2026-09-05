@@ -232,6 +232,34 @@ void AesEncryptor::generateIV(uint8_t iv[16]) {
     }
 }
 
+void AesEncryptor::generateRandomIv(uint8_t iv[16]) {
+    generateIV(iv);
+}
+
+void AesEncryptor::encryptCbcBlocks(const uint8_t* in, size_t blocks,
+                                    uint8_t* out, uint8_t prev[16]) const {
+    for (size_t b = 0; b < blocks; ++b) {
+        const uint8_t* plain = in + b * BLOCK_SIZE;
+        uint8_t* cipher = out + b * BLOCK_SIZE;
+        uint8_t block[BLOCK_SIZE];
+        for (size_t i = 0; i < BLOCK_SIZE; ++i) block[i] = plain[i] ^ prev[i];
+        encryptBlock(block, cipher);
+        std::memcpy(prev, cipher, BLOCK_SIZE);
+    }
+}
+
+void AesEncryptor::decryptCbcBlocks(const uint8_t* in, size_t blocks,
+                                    uint8_t* out, uint8_t prev[16]) const {
+    for (size_t b = 0; b < blocks; ++b) {
+        const uint8_t* cipher = in + b * BLOCK_SIZE;
+        uint8_t* plain = out + b * BLOCK_SIZE;
+        uint8_t block[BLOCK_SIZE];
+        decryptBlock(cipher, block);
+        for (size_t i = 0; i < BLOCK_SIZE; ++i) plain[i] = block[i] ^ prev[i];
+        std::memcpy(prev, cipher, BLOCK_SIZE);
+    }
+}
+
 std::vector<uint8_t> AesEncryptor::encrypt(const uint8_t* plaintext, size_t len) const {
     if (!plaintext && len > 0) return {};
     // 生成随机 IV，然后调用指定 IV 的加密
