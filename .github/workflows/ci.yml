@@ -27,6 +27,7 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-cppcheck
+            mingw-w64-ucrt-x86_64-gtest
 
       - name: Configure (strict warnings)
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSTRICT_WARNINGS=ON
@@ -35,7 +36,7 @@ jobs:
         run: cmake --build build
 
       - name: Run tests
-        run: ./build/backup_tests.exe
+        run: ctest --test-dir build --output-on-failure
 
       - name: cppcheck static analysis
         run: cppcheck --enable=warning,style,performance --error-exitcode=1 --inline-suppr -I include src/
@@ -59,6 +60,7 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-gtest
 
       - name: Configure (hardening)
         run: cmake -S . -B build-hard -G Ninja -DCMAKE_BUILD_TYPE=Release -DHARDENING=ON
@@ -67,4 +69,4 @@ jobs:
         run: cmake --build build-hard
 
       - name: Run tests (hardened runtime)
-        run: ./build-hard/backup_tests.exe
+        run: ctest --test-dir build-hard --output-on-failure

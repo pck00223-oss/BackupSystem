@@ -1,6 +1,6 @@
 // FileComparatorTest.cpp - 增量变更检测测试
 // 覆盖需求文档 17.4 增量备份测试表 I01-I09 的核心判定逻辑。
-#include "TestFramework.h"
+#include <gtest/gtest.h>
 
 #include <algorithm>
 
@@ -65,47 +65,47 @@ FileChangeType changeOf(const std::vector<ChangeRecord>& records, const std::wst
 
 }  // namespace
 
-TEST(Comparator_Unchanged) {
+TEST(Comparator, Unchanged) {
     auto prev = buildPrevious({makeFile(L"a.txt", 100, 1000, "hash:same")});
     auto r = FileComparator::compare({makeFile(L"a.txt", 100, 1000, "hash:same")}, prev, fakeHash);
-    CHECK_EQ(changeOf(r, L"a.txt"), FileChangeType::Unchanged);
+    EXPECT_EQ(changeOf(r, L"a.txt"), FileChangeType::Unchanged);
 }
 
-TEST(Comparator_Added) {
+TEST(Comparator, Added) {
     auto prev = buildPrevious({});
     auto r = FileComparator::compare({makeFile(L"new.txt", 10, 1)}, prev, fakeHash);
-    CHECK_EQ(changeOf(r, L"new.txt"), FileChangeType::Added);
+    EXPECT_EQ(changeOf(r, L"new.txt"), FileChangeType::Added);
 }
 
-TEST(Comparator_ModifiedBySize) {
+TEST(Comparator, ModifiedBySize) {
     auto prev = buildPrevious({makeFile(L"a.txt", 100, 1000, "hash:old")});
     auto r = FileComparator::compare({makeFile(L"a.txt", 200, 1000, "hash:new")}, prev, fakeHash);
-    CHECK_EQ(changeOf(r, L"a.txt"), FileChangeType::Modified);
+    EXPECT_EQ(changeOf(r, L"a.txt"), FileChangeType::Modified);
 }
 
-TEST(Comparator_ModifiedByHash) {
+TEST(Comparator, ModifiedByHash) {
     // 大小相同、时间变化、Hash 不同 -> Modified
     auto prev = buildPrevious({makeFile(L"a.txt", 100, 1000, "hash:old")});
     auto r = FileComparator::compare({makeFile(L"a.txt", 100, 2000, "hash:new")}, prev, fakeHash);
-    CHECK_EQ(changeOf(r, L"a.txt"), FileChangeType::Modified);
+    EXPECT_EQ(changeOf(r, L"a.txt"), FileChangeType::Modified);
 }
 
-TEST(Comparator_HashSameMeansUnchanged) {
+TEST(Comparator, HashSameMeansUnchanged) {
     // 大小相同、时间变化、Hash 相同 -> Unchanged（避免误报）
     auto prev = buildPrevious({makeFile(L"a.txt", 100, 1000, "hash:same")});
     auto r = FileComparator::compare({makeFile(L"a.txt", 100, 2000, "hash:same")}, prev, fakeHash);
-    CHECK_EQ(changeOf(r, L"a.txt"), FileChangeType::Unchanged);
+    EXPECT_EQ(changeOf(r, L"a.txt"), FileChangeType::Unchanged);
 }
 
-TEST(Comparator_Deleted) {
+TEST(Comparator, Deleted) {
     auto prev = buildPrevious({makeFile(L"a.txt", 100, 1000, "hash:x"),
                                makeFile(L"b.txt", 50, 900, "hash:y")});
     auto r = FileComparator::compare({makeFile(L"a.txt", 100, 1000, "hash:x")}, prev, fakeHash);
-    CHECK_EQ(changeOf(r, L"a.txt"), FileChangeType::Unchanged);
-    CHECK_EQ(changeOf(r, L"b.txt"), FileChangeType::Deleted);
+    EXPECT_EQ(changeOf(r, L"a.txt"), FileChangeType::Unchanged);
+    EXPECT_EQ(changeOf(r, L"b.txt"), FileChangeType::Deleted);
 }
 
-TEST(Comparator_Mixed) {
+TEST(Comparator, Mixed) {
     auto prev = buildPrevious({makeFile(L"a.txt", 100, 1000, "hash:x"),
                                makeFile(L"b.txt", 100, 1000, "hash:y"),
                                makeFile(L"c.txt", 100, 1000, "hash:z")});
@@ -113,20 +113,20 @@ TEST(Comparator_Mixed) {
                         makeFile(L"b.txt", 100, 2000, "hash:changed"),  // 修改
                         makeFile(L"d.txt", 1, 1)},                      // 新增
                        prev, fakeHash);
-    CHECK_EQ(changeOf(r, L"a.txt"), FileChangeType::Unchanged);
-    CHECK_EQ(changeOf(r, L"b.txt"), FileChangeType::Modified);
-    CHECK_EQ(changeOf(r, L"c.txt"), FileChangeType::Deleted);
-    CHECK_EQ(changeOf(r, L"d.txt"), FileChangeType::Added);
+    EXPECT_EQ(changeOf(r, L"a.txt"), FileChangeType::Unchanged);
+    EXPECT_EQ(changeOf(r, L"b.txt"), FileChangeType::Modified);
+    EXPECT_EQ(changeOf(r, L"c.txt"), FileChangeType::Deleted);
+    EXPECT_EQ(changeOf(r, L"d.txt"), FileChangeType::Added);
 }
 
-TEST(Comparator_NoHashProviderConservative) {
+TEST(Comparator, NoHashProviderConservative) {
     // 无法计算 Hash 时，时间变化的文件保守视为 Modified
     auto prev = buildPrevious({makeFile(L"a.txt", 100, 1000, "")});
     auto r = FileComparator::compare({makeFile(L"a.txt", 100, 2000, "")}, prev, nullptr);
-    CHECK_EQ(changeOf(r, L"a.txt"), FileChangeType::Modified);
+    EXPECT_EQ(changeOf(r, L"a.txt"), FileChangeType::Modified);
 }
 
-TEST(Comparator_TypeChangeFileToDirectory) {
+TEST(Comparator, TypeChangeFileToDirectory) {
     // 文件 -> 同名目录：当前目录 Added，旧文件 Deleted
     auto prev = buildPrevious({makeFile(L"a.txt", 100, 1000, "hash:old")});
     auto r = FileComparator::compare({makeDir(L"a.txt", 2000)}, prev, fakeHash);
@@ -138,11 +138,11 @@ TEST(Comparator_TypeChangeFileToDirectory) {
         if (c.info.type == FileType::Directory && c.change == FileChangeType::Added) ++addedDir;
         if (c.info.type == FileType::File && c.change == FileChangeType::Deleted) ++deletedFile;
     }
-    CHECK_EQ(addedDir, 1);
-    CHECK_EQ(deletedFile, 1);
+    EXPECT_EQ(addedDir, 1);
+    EXPECT_EQ(deletedFile, 1);
 }
 
-TEST(Comparator_TypeChangeDirectoryToFile) {
+TEST(Comparator, TypeChangeDirectoryToFile) {
     // 目录 -> 同名文件：当前文件 Added，旧目录 Deleted
     auto prev = buildPrevious({makeDir(L"a.txt", 1000)});
     auto r = FileComparator::compare({makeFile(L"a.txt", 42, 2000, "hash:new")}, prev, fakeHash);
@@ -154,6 +154,6 @@ TEST(Comparator_TypeChangeDirectoryToFile) {
         if (c.info.type == FileType::File && c.change == FileChangeType::Added) ++addedFile;
         if (c.info.type == FileType::Directory && c.change == FileChangeType::Deleted) ++deletedDir;
     }
-    CHECK_EQ(addedFile, 1);
-    CHECK_EQ(deletedDir, 1);
+    EXPECT_EQ(addedFile, 1);
+    EXPECT_EQ(deletedDir, 1);
 }

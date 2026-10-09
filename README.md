@@ -1,10 +1,10 @@
 # BackupSystem - 基于 C++/Win32 的本地数据备份软件
 
 ![Build](https://github.com/pck00223-oss/BackupSystem/actions/workflows/ci.yml/badge.svg)
-![Tests](https://img.shields.io/badge/tests-386-brightgreen)
+![Tests](https://img.shields.io/badge/tests-103-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-面向 Windows 平台的本地数据备份工具。采用**分层架构 + 面向对象设计**，零第三方依赖，
+面向 Windows 平台的本地数据备份工具。采用**分层架构 + 面向对象设计**，运行时零第三方依赖，
 实现全量/增量备份、数据恢复、完整性校验、快照与时间点恢复、AES-256 加密、Win32 原生 GUI、
 Windows 计划任务集成等完整功能。
 
@@ -25,10 +25,10 @@ Windows 计划任务集成等完整功能。
 ## 技术栈
 
 - **语言**：C++17
-- **平台**：Windows（Win32 API，零第三方依赖）
+- **平台**：Windows（Win32 API，运行时零第三方依赖）
 - **构建**：CMake + Ninja / MSVC
 - **加密**：自实现 AES-256-CBC + SHA-256（NIST 标准向量验证），BCryptGenRandom 生成 IV
-- **测试**：自研轻量测试框架（无依赖），386 项断言
+- **测试**：GoogleTest（`find_package(GTest)` 优先，FetchContent 兜底），103 个用例
 - **CI**：GitHub Actions（strict 构建 + 全部测试 + cppcheck + 加固构建）
 
 ## 架构设计（分层）
@@ -75,7 +75,7 @@ BackupSystem/
 ├── 数据备份软件设计与实现方案.md   ← 需求文档
 ├── include/   头文件（按层分包：core / engine / business / app / gui）
 ├── src/       实现文件（main.cpp CLI 入口 / gui_main.cpp GUI 入口）
-├── tests/     单元与集成测试（386 项断言）
+├── tests/     单元与集成测试（GoogleTest，103 个用例）
 ├── config/    default.conf 默认配置
 └── scripts/   run_checks.ps1 一键健壮性检查脚本
 ```
@@ -143,6 +143,8 @@ build\backupapp.exe schedule --register --time 20:00 --source D:\MyData --target
 build\backupgui.exe
 
 # 运行测试
+ctest --test-dir build --output-on-failure
+# 或直接运行 GTEST
 build\backup_tests.exe
 ```
 
@@ -177,7 +179,9 @@ build\backup_tests.exe
 
 ## 测试与 CI
 
-- **386 项断言**全部通过，覆盖：备份/恢复/校验/增量检测/加密/NIST 标准向量/快照/崩溃恢复/GUI 任务持久化/大文件流式加密
+- **103 个 GoogleTest 用例**（102 通过 + 1 个条件跳过：符号链接用例需要开发者模式/管理员权限），覆盖：备份/恢复/校验/增量检测/加密/NIST 标准向量/快照/崩溃恢复/GUI 任务持久化/大文件流式加密/接口边界
+- 测试环境隔离：`TempDir`（RAII 清理）、`EnvGuard`（环境变量与工作目录还原）、`LoggerGuard`（全局单例复位）
+- 测试依赖：GoogleTest（`find_package(GTest)` 优先；未安装时 CMake 自动 FetchContent 拉取 v1.15.2），运行时零第三方依赖
 - **GitHub Actions CI**：每次 push 自动执行 strict 构建（0 警告）+ 全部测试 + cppcheck（0 告警）+ 加固构建
 - 严格编译选项：`-Wall -Wextra -Wconversion -Wshadow -Wsign-conversion -Wpedantic`
 

@@ -1,7 +1,7 @@
 // BackupRestoreTest.cpp - 端到端集成测试
 // 覆盖需求文档 17.3/17.4/17.5/17.6 的核心场景：
 //   全量备份、增量备份（新增/修改/删除/未变化）、恢复与 Hash 校验、取消、异常。
-#include "TestFramework.h"
+#include <gtest/gtest.h>
 #include "TestUtil.h"
 
 #include "business/BackupManager.h"
@@ -57,7 +57,7 @@ std::string hashOf(const std::wstring& p) {
 
 }  // namespace
 
-TEST(Backup_Full) {
+TEST(Backup, Full) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
@@ -65,46 +65,46 @@ TEST(Backup_Full) {
     cfg.mode = BackupMode::Full;
 
     BackupResult res = BackupManager::run(cfg);
-    CHECK(res.success);
-    CHECK(res.backedUp == 4);  // 4 个文件（空目录不复制内容）
-    CHECK(res.added == 4);
+    EXPECT_TRUE(res.success);
+    EXPECT_TRUE(res.backedUp == 4);  // 4 个文件（空目录不复制内容）
+    EXPECT_TRUE(res.added == 4);
 
     // Manifest 与 data 结构
-    CHECK(FileSystem::exists(env.target + L"\\manifest.txt"));
-    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
-    CHECK(FileSystem::exists(env.target + L"\\data\\docs\\sub\\c.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\manifest.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\a.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\docs\\sub\\c.txt"));
 
     // 数据一致性：Hash 一致
-    CHECK_EQ(hashOf(env.target + L"\\data\\a.txt"), hashOf(env.src + L"a.txt"));
-    CHECK_EQ(hashOf(env.target + L"\\data\\docs\\sub\\c.txt"), hashOf(env.src + L"docs\\sub\\c.txt"));
+    EXPECT_EQ(hashOf(env.target + L"\\data\\a.txt"), hashOf(env.src + L"a.txt"));
+    EXPECT_EQ(hashOf(env.target + L"\\data\\docs\\sub\\c.txt"), hashOf(env.src + L"docs\\sub\\c.txt"));
 
     // 历史记录
-    CHECK(FileSystem::exists(env.target + L"\\history.log"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\history.log"));
 }
 
-TEST(Backup_Incremental_NoChange) {
+TEST(Backup, Incremental_NoChange) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.target;
     cfg.mode = BackupMode::Full;
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
     // 第二次：增量，无变化
     cfg.mode = BackupMode::Incremental;
     BackupResult res2 = BackupManager::run(cfg);
-    CHECK(res2.success);
-    CHECK(res2.backedUp == 0);  // 无文件被写入
-    CHECK(res2.unchanged == 4);
+    EXPECT_TRUE(res2.success);
+    EXPECT_TRUE(res2.backedUp == 0);  // 无文件被写入
+    EXPECT_TRUE(res2.unchanged == 4);
 }
 
-TEST(Backup_Incremental_AddModifyDelete) {
+TEST(Backup, Incremental_AddModifyDelete) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.target;
     cfg.mode = BackupMode::Full;
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
     // 修改 a.txt、新增 d.txt、删除 empty.txt
     testutil::writeFile(env.src + L"a.txt", "modified content");
@@ -113,66 +113,66 @@ TEST(Backup_Incremental_AddModifyDelete) {
 
     cfg.mode = BackupMode::Incremental;
     BackupResult res = BackupManager::run(cfg);
-    CHECK(res.success);
-    CHECK(res.backedUp == 2);    // 只处理修改 1 + 新增 1
-    CHECK(res.added == 1);
-    CHECK(res.modified == 1);
-    CHECK(res.deleted == 1);
-    CHECK(res.unchanged == 2);
+    EXPECT_TRUE(res.success);
+    EXPECT_TRUE(res.backedUp == 2);    // 只处理修改 1 + 新增 1
+    EXPECT_TRUE(res.added == 1);
+    EXPECT_TRUE(res.modified == 1);
+    EXPECT_TRUE(res.deleted == 1);
+    EXPECT_TRUE(res.unchanged == 2);
 
     // data 中内容更新
-    CHECK_EQ(hashOf(env.target + L"\\data\\a.txt"), hashOf(env.src + L"a.txt"));
-    CHECK(FileSystem::exists(env.target + L"\\data\\d.txt"));
+    EXPECT_EQ(hashOf(env.target + L"\\data\\a.txt"), hashOf(env.src + L"a.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\d.txt"));
 }
 
-TEST(Backup_Incremental_DeleteOnly) {
+TEST(Backup, Incremental_DeleteOnly) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.target;
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
     FileSystem::deleteFile(env.src + L"b.cpp");
     cfg.mode = BackupMode::Incremental;
     BackupResult res = BackupManager::run(cfg);
-    CHECK(res.success);
-    CHECK(res.deleted == 1);
+    EXPECT_TRUE(res.success);
+    EXPECT_TRUE(res.deleted == 1);
     // 新 Manifest 不再包含 b.cpp
     Manifest m;
-    CHECK(m.loadFromFile(env.target + L"\\manifest.txt"));
-    CHECK(m.find(L"b.cpp") == nullptr);
-    CHECK(m.find(L"a.txt") != nullptr);
+    EXPECT_TRUE(m.loadFromFile(env.target + L"\\manifest.txt"));
+    EXPECT_TRUE(m.find(L"b.cpp") == nullptr);
+    EXPECT_TRUE(m.find(L"a.txt") != nullptr);
 }
 
-TEST(Restore_FullRoundTrip) {
+TEST(Restore, FullRoundTrip) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.target;
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
     RestoreConfig rcfg;
     rcfg.backupRoot = env.target;
     rcfg.restorePath = env.restore;
     RestoreResult rres = RestoreManager::run(rcfg);
-    CHECK(rres.success);
-    CHECK(rres.restored == 4);
-    CHECK(rres.verified == 4);
-    CHECK(rres.failed == 0);
+    EXPECT_TRUE(rres.success);
+    EXPECT_TRUE(rres.restored == 4);
+    EXPECT_TRUE(rres.verified == 4);
+    EXPECT_TRUE(rres.failed == 0);
 
     // 路径、大小、内容、Hash 全部一致
-    CHECK(FileSystem::exists(env.restore + L"\\a.txt"));
-    CHECK(FileSystem::exists(env.restore + L"\\docs\\sub\\c.txt"));
-    CHECK_EQ(hashOf(env.restore + L"\\a.txt"), hashOf(env.src + L"a.txt"));
-    CHECK_EQ(hashOf(env.restore + L"\\docs\\sub\\c.txt"), hashOf(env.src + L"docs\\sub\\c.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.restore + L"\\a.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.restore + L"\\docs\\sub\\c.txt"));
+    EXPECT_EQ(hashOf(env.restore + L"\\a.txt"), hashOf(env.src + L"a.txt"));
+    EXPECT_EQ(hashOf(env.restore + L"\\docs\\sub\\c.txt"), hashOf(env.src + L"docs\\sub\\c.txt"));
 }
 
-TEST(Restore_ConflictPolicy) {
+TEST(Restore, ConflictPolicy) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.target;
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
     // 目标目录预置一个内容不同的 a.txt
     testutil::writeFile(env.restore + L"a.txt", "conflicting");
@@ -183,73 +183,73 @@ TEST(Restore_ConflictPolicy) {
 
     // 默认：不覆盖，跳过
     RestoreResult r1 = RestoreManager::run(rcfg);
-    CHECK(r1.success);
-    CHECK(r1.skipped >= 1);
+    EXPECT_TRUE(r1.success);
+    EXPECT_TRUE(r1.skipped >= 1);
 
     // 覆盖模式：内容被替换为备份内容
     rcfg.overwrite = true;
     RestoreResult r2 = RestoreManager::run(rcfg);
-    CHECK(r2.success);
-    CHECK_EQ(hashOf(env.restore + L"\\a.txt"), hashOf(env.src + L"a.txt"));
+    EXPECT_TRUE(r2.success);
+    EXPECT_EQ(hashOf(env.restore + L"\\a.txt"), hashOf(env.src + L"a.txt"));
 }
 
-TEST(Verify_HealthyBackup) {
+TEST(Verify, HealthyBackup) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.target;
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
     VerifyResult res = VerifyManager::run(env.target);
-    CHECK(res.success);
-    CHECK_EQ(res.total, uint64_t(4));  // a.txt / b.cpp / docs\sub\c.txt / empty.txt
-    CHECK_EQ(res.passed, uint64_t(4));
-    CHECK_EQ(res.missing, uint64_t(0));
-    CHECK_EQ(res.corrupted, uint64_t(0));
+    EXPECT_TRUE(res.success);
+    EXPECT_EQ(res.total, uint64_t(4));  // a.txt / b.cpp / docs\sub\c.txt / empty.txt
+    EXPECT_EQ(res.passed, uint64_t(4));
+    EXPECT_EQ(res.missing, uint64_t(0));
+    EXPECT_EQ(res.corrupted, uint64_t(0));
 }
 
-TEST(Verify_MissingFile) {
+TEST(Verify, MissingFile) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.target;
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
-    CHECK(FileSystem::deleteFile(env.target + L"\\data\\a.txt"));
+    EXPECT_TRUE(FileSystem::deleteFile(env.target + L"\\data\\a.txt"));
     VerifyResult res = VerifyManager::run(env.target);
-    CHECK(!res.success);
-    CHECK_EQ(res.missing, uint64_t(1));
-    CHECK_EQ(res.passed, uint64_t(3));
-    CHECK_EQ(res.corrupted, uint64_t(0));
+    EXPECT_TRUE(!res.success);
+    EXPECT_EQ(res.missing, uint64_t(1));
+    EXPECT_EQ(res.passed, uint64_t(3));
+    EXPECT_EQ(res.corrupted, uint64_t(0));
 }
 
-TEST(Verify_CorruptedFile) {
+TEST(Verify, CorruptedFile) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.target;
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
     // 同长度改写内容，确保走 Hash 校验而不是大小检查
     testutil::writeFile(env.target + L"\\data\\a.txt", "HELLO WORLD");
     VerifyResult res = VerifyManager::run(env.target);
-    CHECK(!res.success);
-    CHECK_EQ(res.corrupted, uint64_t(1));
-    CHECK_EQ(res.passed, uint64_t(3));
-    CHECK_EQ(res.missing, uint64_t(0));
+    EXPECT_TRUE(!res.success);
+    EXPECT_EQ(res.corrupted, uint64_t(1));
+    EXPECT_EQ(res.passed, uint64_t(3));
+    EXPECT_EQ(res.missing, uint64_t(0));
 }
 
-TEST(Backup_NonExistentSource) {
+TEST(Backup, NonExistentSource) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src + L"\\does_not_exist";
     cfg.targetPath = env.target;
     BackupResult res = BackupManager::run(cfg);
-    CHECK(!res.success);
-    CHECK(!res.errors.empty());
+    EXPECT_TRUE(!res.success);
+    EXPECT_TRUE(!res.errors.empty());
 }
 
-TEST(Backup_Cancel) {
+TEST(Backup, Cancel) {
     TestEnv env;
     // 制造较大文件，取消后应停止处理
     testutil::writeFile(env.src + L"big.bin", std::string(8 * 1024 * 1024, 'z'));
@@ -260,11 +260,11 @@ TEST(Backup_Cancel) {
     BackupManager::Options opts;
     opts.cancelCheck = []() { return true; };  // 一开始就取消
     BackupResult res = BackupManager::run(cfg, opts);
-    CHECK(res.cancelled);
-    CHECK(!res.success);
+    EXPECT_TRUE(res.cancelled);
+    EXPECT_TRUE(!res.success);
 }
 
-TEST(Backup_Filtered) {
+TEST(Backup, Filtered) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
@@ -273,34 +273,34 @@ TEST(Backup_Filtered) {
     cfg.filter.maxSize = 500;  // 排除 1000 字节的 c.txt
 
     BackupResult res = BackupManager::run(cfg);
-    CHECK(res.success);
-    CHECK(res.backedUp == 2);  // a.txt + empty.txt（c.txt 超大小、b.cpp 非 .txt）
-    CHECK(!FileSystem::exists(env.target + L"\\data\\b.cpp"));
+    EXPECT_TRUE(res.success);
+    EXPECT_TRUE(res.backedUp == 2);  // a.txt + empty.txt（c.txt 超大小、b.cpp 非 .txt）
+    EXPECT_TRUE(!FileSystem::exists(env.target + L"\\data\\b.cpp"));
 }
 
 // 回归测试：源目录 == 目标目录必须被拒绝，否则自我膨胀
-TEST(Backup_SourceEqualsTarget_Rejected) {
+TEST(Backup, SourceEqualsTarget_Rejected) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.src;  // 目标等于源
     cfg.mode = BackupMode::Full;
     BackupResult res = BackupManager::run(cfg);
-    CHECK(!res.success);
+    EXPECT_TRUE(!res.success);
     bool found = false;
     for (const auto& e : res.errors) {
         if (e.find(L"目标路径不能等于或位于源目录内") != std::wstring::npos) found = true;
     }
-    CHECK(found);
+    EXPECT_TRUE(found);
 }
 
 // 回归测试：目标路径用 .. 语法“看起来在源之外、实际解析到源内部”也必须被拒绝
-TEST(Backup_SourceDotDotBypass_Rejected) {
+TEST(Backup, SourceDotDotBypass_Rejected) {
     TestEnv env;
     // 源为 docs\sub；构造 docs\subx\..\sub\tgt —— 字面上不在源前缀下，
     // 但 GetFullPathNameW 解析后落在源目录内部。
     const std::wstring src = env.src + L"docs\\sub";
-    CHECK(FileSystem::createDirectories(env.src + L"docs\\subx"));
+    EXPECT_TRUE(FileSystem::createDirectories(env.src + L"docs\\subx"));
 
     BackupConfig cfg;
     cfg.sourcePath = src;
@@ -308,16 +308,16 @@ TEST(Backup_SourceDotDotBypass_Rejected) {
     cfg.mode = BackupMode::Full;
 
     BackupResult res = BackupManager::run(cfg);
-    CHECK(!res.success);
+    EXPECT_TRUE(!res.success);
     bool found = false;
     for (const auto& e : res.errors) {
         if (e.find(L"目标路径不能等于或位于源目录内") != std::wstring::npos) found = true;
     }
-    CHECK(found);
+    EXPECT_TRUE(found);
 }
 
 // 回归测试：取消备份后 Manifest 必须保持旧版，不能保存部分快照
-TEST(Backup_CancelPreservesOldManifest) {
+TEST(Backup, CancelPreservesOldManifest) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
@@ -326,9 +326,9 @@ TEST(Backup_CancelPreservesOldManifest) {
 
     // 第一次全量备份成功
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
+    EXPECT_TRUE(r1.success);
     const std::wstring manifestPath = env.target + L"\\manifest.txt";
-    CHECK(FileSystem::exists(manifestPath));
+    EXPECT_TRUE(FileSystem::exists(manifestPath));
 
     // 读取旧 Manifest 内容
     std::ifstream ifs(manifestPath.c_str(), std::ios::binary);
@@ -346,7 +346,7 @@ TEST(Backup_CancelPreservesOldManifest) {
     // 且取消发生在复制循环内（而非扫描后立即返回）。
     std::vector<FileInfo> preview;
     std::vector<std::wstring> scanErr;
-    CHECK(FileScanner::scan(env.src, preview, scanErr));
+    EXPECT_TRUE(FileScanner::scan(env.src, preview, scanErr));
     const size_t scanCallCount = preview.size();
 
     bool cancelNow = false;
@@ -358,29 +358,29 @@ TEST(Backup_CancelPreservesOldManifest) {
     };
     opts.cancelCheck = [&]() { return cancelNow; };
     BackupResult r2 = BackupManager::run(cfg, opts);
-    CHECK(r2.cancelled);
-    CHECK(!r2.success);
+    EXPECT_TRUE(r2.cancelled);
+    EXPECT_TRUE(!r2.success);
 
     // Manifest 必须保持旧版（未被覆盖）
     std::ifstream ifs2(manifestPath.c_str(), std::ios::binary);
     std::string newContent((std::istreambuf_iterator<char>(ifs2)), std::istreambuf_iterator<char>());
     ifs2.close();
-    CHECK(oldContent == newContent);
+    EXPECT_TRUE(oldContent == newContent);
 }
 
 // 回归测试：文件与同名目录互换（file <-> directory）时，
 // 增量备份应更新 Manifest 类型并在 data/ 中完成物理替换。
-TEST(Backup_Incremental_TypeChangeFileDir) {
+TEST(Backup, Incremental_TypeChangeFileDir) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.target;
     cfg.mode = BackupMode::Full;
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
     // a.txt 原本是文件 -> 改为同名目录并放入子文件
     testutil::removeAll(env.src + L"a.txt");
-    CHECK(FileSystem::createDirectories(env.src + L"a.txt"));
+    EXPECT_TRUE(FileSystem::createDirectories(env.src + L"a.txt"));
     testutil::writeFile(env.src + L"a.txt\\inner.txt", "inner content");
 
     // emptydir 原本是目录 -> 改为同名文件
@@ -389,30 +389,30 @@ TEST(Backup_Incremental_TypeChangeFileDir) {
 
     cfg.mode = BackupMode::Incremental;
     BackupResult res = BackupManager::run(cfg);
-    CHECK(res.success);
-    CHECK(res.failed == 0);
+    EXPECT_TRUE(res.success);
+    EXPECT_TRUE(res.failed == 0);
 
     // Manifest 中的类型已更新
     Manifest m;
-    CHECK(m.loadFromFile(env.target + L"\\manifest.txt"));
+    EXPECT_TRUE(m.loadFromFile(env.target + L"\\manifest.txt"));
     const Manifest::Entry* eDir = m.find(L"a.txt");
-    CHECK(eDir != nullptr);
-    CHECK(eDir->info.type == FileType::Directory);
+    EXPECT_TRUE(eDir != nullptr);
+    EXPECT_TRUE(eDir->info.type == FileType::Directory);
     const Manifest::Entry* eFile = m.find(L"emptydir");
-    CHECK(eFile != nullptr);
-    CHECK(eFile->info.type == FileType::File);
+    EXPECT_TRUE(eFile != nullptr);
+    EXPECT_TRUE(eFile->info.type == FileType::File);
 
     // data/ 中物理形态正确
-    CHECK(FileSystem::isDirectory(env.target + L"\\data\\a.txt"));
-    CHECK(FileSystem::exists(env.target + L"\\data\\emptydir"));
-    CHECK(!FileSystem::isDirectory(env.target + L"\\data\\emptydir"));
-    CHECK_EQ(hashOf(env.target + L"\\data\\emptydir"), hashOf(env.src + L"emptydir"));
+    EXPECT_TRUE(FileSystem::isDirectory(env.target + L"\\data\\a.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\emptydir"));
+    EXPECT_TRUE(!FileSystem::isDirectory(env.target + L"\\data\\emptydir"));
+    EXPECT_EQ(hashOf(env.target + L"\\data\\emptydir"), hashOf(env.src + L"emptydir"));
 
     // data/ 根下不应遗留任何 .baktmp.old 旁路数据
     std::vector<std::pair<std::wstring, FileType>> dataRoot;
-    CHECK(FileSystem::listDirectory(env.target + L"\\data", dataRoot));
+    EXPECT_TRUE(FileSystem::listDirectory(env.target + L"\\data", dataRoot));
     for (const auto& entry : dataRoot) {
-        CHECK(entry.first.find(L".baktmp.old") == std::wstring::npos);
+        EXPECT_TRUE(entry.first.find(L".baktmp.old") == std::wstring::npos);
     }
 
     // 恢复后结构一致
@@ -420,17 +420,17 @@ TEST(Backup_Incremental_TypeChangeFileDir) {
     rcfg.backupRoot = env.target;
     rcfg.restorePath = env.restore;
     RestoreResult rres = RestoreManager::run(rcfg);
-    CHECK(rres.success);
-    CHECK(rres.failed == 0);
-    CHECK(FileSystem::exists(env.restore + L"\\a.txt\\inner.txt"));
-    CHECK_EQ(hashOf(env.restore + L"\\a.txt\\inner.txt"), hashOf(env.src + L"a.txt\\inner.txt"));
-    CHECK(FileSystem::exists(env.restore + L"\\emptydir"));
-    CHECK(!FileSystem::isDirectory(env.restore + L"\\emptydir"));
-    CHECK_EQ(hashOf(env.restore + L"\\emptydir"), hashOf(env.src + L"emptydir"));
+    EXPECT_TRUE(rres.success);
+    EXPECT_TRUE(rres.failed == 0);
+    EXPECT_TRUE(FileSystem::exists(env.restore + L"\\a.txt\\inner.txt"));
+    EXPECT_EQ(hashOf(env.restore + L"\\a.txt\\inner.txt"), hashOf(env.src + L"a.txt\\inner.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.restore + L"\\emptydir"));
+    EXPECT_TRUE(!FileSystem::isDirectory(env.restore + L"\\emptydir"));
+    EXPECT_EQ(hashOf(env.restore + L"\\emptydir"), hashOf(env.src + L"emptydir"));
 }
 
 // 回归测试：调度器 stop() 后重新 start()，取消标志必须复位，runNow 能正常执行
-TEST(Scheduler_StopStart_RunNowSucceeds) {
+TEST(Scheduler, StopStart_RunNowSucceeds) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
@@ -453,12 +453,12 @@ TEST(Scheduler_StopStart_RunNowSucceeds) {
     scheduler.runNow(L"test");
     scheduler.stop();
 
-    CHECK(FileSystem::exists(env.target + L"\\manifest.txt"));
-    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\manifest.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\a.txt"));
 }
 
 // 回归测试：错过计划时间只补跑一次，不会重复执行
-TEST(Scheduler_MissedTime_RunsOnce) {
+TEST(Scheduler, MissedTime_RunsOnce) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
@@ -484,16 +484,16 @@ TEST(Scheduler_MissedTime_RunsOnce) {
     for (int i = 0; i < 50 && runCount.load() == 0; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    CHECK(runCount.load() >= 1);
+    EXPECT_TRUE(runCount.load() >= 1);
     // 再等 2 秒，确认不会重复执行
     std::this_thread::sleep_for(std::chrono::seconds(2));
     scheduler.stop();
 
-    CHECK(runCount.load() == 1);
+    EXPECT_TRUE(runCount.load() == 1);
 }
 
 // 回归测试：用户的正常 .baktmp 文件不被误判为残留、不被误删
-TEST(CrashRecovery_LegalBaktmpFile_NotDeleted) {
+TEST(CrashRecovery, LegalBaktmpFile_NotDeleted) {
     TestEnv env;
     // 源目录放一个以 .baktmp 结尾的正常文件
     testutil::writeFile(env.src + L"normal.baktmp", "this is a normal file");
@@ -505,23 +505,23 @@ TEST(CrashRecovery_LegalBaktmpFile_NotDeleted) {
 
     // 第一次全量备份
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
-    CHECK(FileSystem::exists(env.target + L"\\data\\normal.baktmp"));
+    EXPECT_TRUE(r1.success);
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\normal.baktmp"));
 
     // verify 不应把合法文件报为残留
     VerifyResult vr = VerifyManager::run(env.target);
-    CHECK(vr.residual == 0);
-    CHECK(vr.success);
+    EXPECT_TRUE(vr.residual == 0);
+    EXPECT_TRUE(vr.success);
 
     // 第二次增量备份（触发 recoverResidualData），合法文件不应被删
     cfg.mode = BackupMode::Incremental;
     BackupResult r2 = BackupManager::run(cfg);
-    CHECK(r2.success);
-    CHECK(FileSystem::exists(env.target + L"\\data\\normal.baktmp"));
+    EXPECT_TRUE(r2.success);
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\normal.baktmp"));
 }
 
 // 回归测试：.baktmp.old 残留且原路径不存在 → 崩溃恢复应还原旧数据
-TEST(CrashRecovery_OldResidual_Restored) {
+TEST(CrashRecovery, OldResidual_Restored) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
@@ -530,28 +530,28 @@ TEST(CrashRecovery_OldResidual_Restored) {
 
     // 全量备份 a.txt
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
-    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
+    EXPECT_TRUE(r1.success);
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\a.txt"));
 
     // 模拟崩溃：把 data\a.txt 移到 data\a.txt.baktmp.old（原路径不存在）
     const std::wstring dataFile = env.target + L"\\data\\a.txt";
     const std::wstring oldFile = env.target + L"\\data\\a.txt.baktmp.old";
-    CHECK(FileSystem::movePath(dataFile, oldFile));
-    CHECK(!FileSystem::exists(dataFile));
-    CHECK(FileSystem::exists(oldFile));
+    EXPECT_TRUE(FileSystem::movePath(dataFile, oldFile));
+    EXPECT_TRUE(!FileSystem::exists(dataFile));
+    EXPECT_TRUE(FileSystem::exists(oldFile));
 
     // 运行增量备份（触发崩溃恢复）
     cfg.mode = BackupMode::Incremental;
     BackupResult r2 = BackupManager::run(cfg);
-    CHECK(r2.success);
+    EXPECT_TRUE(r2.success);
 
     // 旧数据应被还原，残留应被清理
-    CHECK(FileSystem::exists(dataFile));
-    CHECK(!FileSystem::exists(oldFile));
+    EXPECT_TRUE(FileSystem::exists(dataFile));
+    EXPECT_TRUE(!FileSystem::exists(oldFile));
 }
 
 // 回归测试：.baktmp.old 残留且原路径已存在（类型一致）→ 应删除旧数据
-TEST(CrashRecovery_OldResidual_Committed_Cleaned) {
+TEST(CrashRecovery, OldResidual_Committed_Cleaned) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
@@ -560,25 +560,25 @@ TEST(CrashRecovery_OldResidual_Committed_Cleaned) {
 
     // 全量备份
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
+    EXPECT_TRUE(r1.success);
 
     // 模拟已提交状态：data\a.txt 存在，同时创建 a.txt.baktmp.old（未清理的旧数据）
     const std::wstring oldFile = env.target + L"\\data\\a.txt.baktmp.old";
     testutil::writeFile(oldFile, "old stale data");
-    CHECK(FileSystem::exists(oldFile));
+    EXPECT_TRUE(FileSystem::exists(oldFile));
 
     // 运行增量备份（触发崩溃恢复）
     cfg.mode = BackupMode::Incremental;
     BackupResult r2 = BackupManager::run(cfg);
-    CHECK(r2.success);
+    EXPECT_TRUE(r2.success);
 
     // 原路径存在且类型与 Manifest 一致 → 旧数据应被清理
-    CHECK(!FileSystem::exists(oldFile));
-    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
+    EXPECT_TRUE(!FileSystem::exists(oldFile));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\a.txt"));
 }
 
 // 回归测试：源目录同时含 a.txt 与 a.txt.baktmp，修改前者后增量备份不丢后者
-TEST(FileCopier_TempFile_NoCollision_WithLegalFile) {
+TEST(FileCopier, TempFile_NoCollision_WithLegalFile) {
     TestEnv env;
     // 源目录同时放 a.txt 和 a.txt.baktmp（合法文件，恰好与旧临时文件后缀同名）
     testutil::writeFile(env.src + L"a.txt", "original");
@@ -591,9 +591,9 @@ TEST(FileCopier_TempFile_NoCollision_WithLegalFile) {
 
     // 第一次全量备份，两者都应入库
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
-    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt"));
-    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt.baktmp"));
+    EXPECT_TRUE(r1.success);
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\a.txt"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\a.txt.baktmp"));
 
     // 修改 a.txt（a.txt.baktmp 不变）
     testutil::writeFile(env.src + L"a.txt", "modified content");
@@ -601,27 +601,27 @@ TEST(FileCopier_TempFile_NoCollision_WithLegalFile) {
     // 增量备份：复制 a.txt 时临时文件不应覆盖 a.txt.baktmp
     cfg.mode = BackupMode::Incremental;
     BackupResult r2 = BackupManager::run(cfg);
-    CHECK(r2.success);
-    CHECK(r2.modified == 1);  // a.txt 被修改
-    CHECK(r2.unchanged >= 1); // a.txt.baktmp 未变化
+    EXPECT_TRUE(r2.success);
+    EXPECT_TRUE(r2.modified == 1);  // a.txt 被修改
+    EXPECT_TRUE(r2.unchanged >= 1); // a.txt.baktmp 未变化
 
     // 关键：a.txt.baktmp 的备份数据不能丢
-    CHECK(FileSystem::exists(env.target + L"\\data\\a.txt.baktmp"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\a.txt.baktmp"));
     // a.txt 应已更新
     std::string hashA;
     HashCalculator::fileSha256(env.target + L"\\data\\a.txt", hashA);
     std::string hashSrc;
     HashCalculator::fileSha256(env.src + L"\\a.txt", hashSrc);
-    CHECK(hashA == hashSrc);
+    EXPECT_TRUE(hashA == hashSrc);
 
     // verify 确认无缺失
     VerifyResult vr = VerifyManager::run(env.target);
-    CHECK(vr.missing == 0);
-    CHECK(vr.success);
+    EXPECT_TRUE(vr.missing == 0);
+    EXPECT_TRUE(vr.success);
 }
 
 // 回归测试：真正的临时文件残留能被 verify 识别并被崩溃恢复清理
-TEST(CrashRecovery_TempResidual_Detected_And_Cleaned) {
+TEST(CrashRecovery, TempResidual_Detected_And_Cleaned) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
@@ -630,7 +630,7 @@ TEST(CrashRecovery_TempResidual_Detected_And_Cleaned) {
 
     // 全量备份
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
+    EXPECT_TRUE(r1.success);
 
     // 手工在 data/ 目录创建两种残留（不在 Manifest 中）：
     //   旧格式：a.txt.baktmp
@@ -640,26 +640,26 @@ TEST(CrashRecovery_TempResidual_Detected_And_Cleaned) {
 
     // verify 应识别出 2 个残留
     VerifyResult vr1 = VerifyManager::run(env.target);
-    CHECK(vr1.residual == 2);
-    CHECK(!vr1.success);
+    EXPECT_TRUE(vr1.residual == 2);
+    EXPECT_TRUE(!vr1.success);
 
     // 运行增量备份（触发 recoverResidualData），应自动清理残留
     cfg.mode = BackupMode::Incremental;
     BackupResult r2 = BackupManager::run(cfg);
-    CHECK(r2.success);
+    EXPECT_TRUE(r2.success);
 
     // 残留文件应被清理
-    CHECK(!FileSystem::exists(env.target + L"\\data\\a.txt.baktmp"));
-    CHECK(!FileSystem::exists(env.target + L"\\data\\b.txt.baktmp.12345.0"));
+    EXPECT_TRUE(!FileSystem::exists(env.target + L"\\data\\a.txt.baktmp"));
+    EXPECT_TRUE(!FileSystem::exists(env.target + L"\\data\\b.txt.baktmp.12345.0"));
 
     // verify 确认无残留
     VerifyResult vr2 = VerifyManager::run(env.target);
-    CHECK(vr2.residual == 0);
-    CHECK(vr2.success);
+    EXPECT_TRUE(vr2.residual == 0);
+    EXPECT_TRUE(vr2.success);
 }
 
 // 回归测试：Manifest 无法读取时崩溃恢复必须保守，不得自动删除/移动任何文件
-TEST(CrashRecovery_NoManifest_NoAutoDelete) {
+TEST(CrashRecovery, NoManifest_NoAutoDelete) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
@@ -668,9 +668,9 @@ TEST(CrashRecovery_NoManifest_NoAutoDelete) {
 
     // 先做一次完整备份，然后模拟 Manifest 丢失
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
+    EXPECT_TRUE(r1.success);
     const std::wstring manifestPath = env.target + L"\\manifest.txt";
-    CHECK(FileSystem::deleteFile(manifestPath));
+    EXPECT_TRUE(FileSystem::deleteFile(manifestPath));
 
     // 手工放一个看似残留的文件（此时没有任何 Manifest 可做白名单判断）
     const std::wstring residual = env.target + L"\\data\\a.txt.baktmp";
@@ -679,17 +679,17 @@ TEST(CrashRecovery_NoManifest_NoAutoDelete) {
     // 无 Manifest 时执行备份：recoverResidualData 应跳过，不删除该文件
     cfg.mode = BackupMode::Incremental;  // 无旧 Manifest 时会退化为全量
     BackupResult r2 = BackupManager::run(cfg);
-    CHECK(r2.success);
-    CHECK(FileSystem::exists(residual));
+    EXPECT_TRUE(r2.success);
+    EXPECT_TRUE(FileSystem::exists(residual));
 
     // 此时 Manifest 已生成，再跑一次增量：恢复逻辑可确认该文件不在白名单内并清理
     BackupResult r3 = BackupManager::run(cfg);
-    CHECK(r3.success);
-    CHECK(!FileSystem::exists(residual));
+    EXPECT_TRUE(r3.success);
+    EXPECT_TRUE(!FileSystem::exists(residual));
 }
 
 // 快照功能测试：保留最近 N 份快照 + 时间点恢复 + 自动清理
-TEST(Snapshot_KeepNAndRestoreFromSnapshot) {
+TEST(Snapshot, KeepNAndRestoreFromSnapshot) {
     TestEnv env;
     testutil::writeFile(env.src + L"a.txt", "v1");
     testutil::writeFile(env.src + L"b.txt", "unchanged");
@@ -702,24 +702,24 @@ TEST(Snapshot_KeepNAndRestoreFromSnapshot) {
 
     // 第1次备份
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
+    EXPECT_TRUE(r1.success);
     std::vector<SnapshotInfo> snaps1 = SnapshotManager::listSnapshots(env.target);
-    CHECK(snaps1.size() == 1);
+    EXPECT_TRUE(snaps1.size() == 1);
 
     // 修改 a.txt，第2次备份（增量）
     testutil::writeFile(env.src + L"a.txt", "v2");
     cfg.mode = BackupMode::Incremental;
     BackupResult r2 = BackupManager::run(cfg);
-    CHECK(r2.success);
+    EXPECT_TRUE(r2.success);
     std::vector<SnapshotInfo> snaps2 = SnapshotManager::listSnapshots(env.target);
-    CHECK(snaps2.size() == 2);
+    EXPECT_TRUE(snaps2.size() == 2);
 
     // 再修改 a.txt，第3次备份（应自动清理最旧的1份）
     testutil::writeFile(env.src + L"a.txt", "v3");
     BackupResult r3 = BackupManager::run(cfg);
-    CHECK(r3.success);
+    EXPECT_TRUE(r3.success);
     std::vector<SnapshotInfo> snaps3 = SnapshotManager::listSnapshots(env.target);
-    CHECK(snaps3.size() == 2);  // 保留最近2份
+    EXPECT_TRUE(snaps3.size() == 2);  // 保留最近2份
 
     // 从第1个（最旧的）快照恢复，a.txt 应为 v2（v1已被清理）
     RestoreConfig rcfg;
@@ -728,21 +728,21 @@ TEST(Snapshot_KeepNAndRestoreFromSnapshot) {
     rcfg.overwrite = true;
     rcfg.snapshot = snaps3[0].timestamp;
     RestoreResult rr1 = RestoreManager::run(rcfg);
-    CHECK(rr1.success);
+    EXPECT_TRUE(rr1.success);
     std::string content1 = testutil::readFile(rcfg.restorePath + L"\\a.txt");
-    CHECK(content1 == "v2");
+    EXPECT_TRUE(content1 == "v2");
 
     // 从最新（不指定 snapshot）恢复，a.txt 应为 v3
     rcfg.restorePath = env.target + L"\\restore_new";
     rcfg.snapshot.clear();
     RestoreResult rr2 = RestoreManager::run(rcfg);
-    CHECK(rr2.success);
+    EXPECT_TRUE(rr2.success);
     std::string content2 = testutil::readFile(rcfg.restorePath + L"\\a.txt");
-    CHECK(content2 == "v3");
+    EXPECT_TRUE(content2 == "v3");
 }
 
 // 快照功能测试：不保留快照时（keepSnapshots=0）不创建 snapshots 目录
-TEST(Snapshot_Disabled_NoSnapshotsDir) {
+TEST(Snapshot, Disabled_NoSnapshotsDir) {
     TestEnv env;
     testutil::writeFile(env.src + L"a.txt", "v1");
 
@@ -753,12 +753,12 @@ TEST(Snapshot_Disabled_NoSnapshotsDir) {
     cfg.keepSnapshots = 0;
 
     BackupResult r = BackupManager::run(cfg);
-    CHECK(r.success);
-    CHECK(!FileSystem::exists(env.target + L"\\snapshots"));
+    EXPECT_TRUE(r.success);
+    EXPECT_TRUE(!FileSystem::exists(env.target + L"\\snapshots"));
 }
 
 // 回归测试：快照创建在删除清理之后，已删除文件不出现在新快照 data 中
-TEST(Snapshot_DeletedFile_NotInNewSnapshotData) {
+TEST(Snapshot, DeletedFile_NotInNewSnapshotData) {
     TestEnv env;
     testutil::writeFile(env.src + L"a.txt", "a");
     testutil::writeFile(env.src + L"b.txt", "b");
@@ -771,31 +771,31 @@ TEST(Snapshot_DeletedFile_NotInNewSnapshotData) {
 
     // 第1次全量备份
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
+    EXPECT_TRUE(r1.success);
 
     // 删除 b.txt，第2次增量备份
     FileSystem::deleteFile(env.src + L"\\b.txt");
     cfg.mode = BackupMode::Incremental;
     BackupResult r2 = BackupManager::run(cfg);
-    CHECK(r2.success);
+    EXPECT_TRUE(r2.success);
 
     // 最新快照的 data/ 中不应有 b.txt
     std::vector<SnapshotInfo> snaps = SnapshotManager::listSnapshots(env.target);
-    CHECK(snaps.size() == 2);
+    EXPECT_TRUE(snaps.size() == 2);
     const SnapshotInfo& latest = snaps.back();
-    CHECK(!FileSystem::exists(latest.path + L"\\data\\b.txt"));
-    CHECK(FileSystem::exists(latest.path + L"\\data\\a.txt"));
+    EXPECT_TRUE(!FileSystem::exists(latest.path + L"\\data\\b.txt"));
+    EXPECT_TRUE(FileSystem::exists(latest.path + L"\\data\\a.txt"));
 
     // 最新快照的 manifest 中不应有 b.txt
     Manifest latestManifest;
     std::string loadErr;
-    CHECK(latestManifest.loadFromFile(latest.path + L"\\manifest.txt", &loadErr));
-    CHECK(latestManifest.find(L"b.txt") == nullptr);
-    CHECK(latestManifest.find(L"a.txt") != nullptr);
+    EXPECT_TRUE(latestManifest.loadFromFile(latest.path + L"\\manifest.txt", &loadErr));
+    EXPECT_TRUE(latestManifest.find(L"b.txt") == nullptr);
+    EXPECT_TRUE(latestManifest.find(L"a.txt") != nullptr);
 }
 
 // 回归测试：verify 能逐份校验快照，损坏一份不影响其它快照判定
-TEST(Verify_Snapshot_CorruptionDetected) {
+TEST(Verify, Snapshot_CorruptionDetected) {
     TestEnv env;
     testutil::writeFile(env.src + L"a.txt", "v1");
 
@@ -806,33 +806,33 @@ TEST(Verify_Snapshot_CorruptionDetected) {
     cfg.keepSnapshots = 2;
 
     // 第1份快照（a.txt = v1）
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
     // 修改 a.txt 后产生第2份快照（a.txt = v2，v1 只留在旧快照）
     testutil::writeFile(env.src + L"a.txt", "v2");
     cfg.mode = BackupMode::Incremental;
-    CHECK(BackupManager::run(cfg).success);
+    EXPECT_TRUE(BackupManager::run(cfg).success);
 
     std::vector<SnapshotInfo> snaps = SnapshotManager::listSnapshots(env.target);
-    CHECK(snaps.size() == 2);
+    EXPECT_TRUE(snaps.size() == 2);
 
     // 损坏旧快照中的 a.txt（先删除再写入，避免通过硬链接连累新快照/根目录）
     const std::wstring oldSnapData = snaps[0].path + L"\\data\\a.txt";
-    CHECK(FileSystem::deleteFile(oldSnapData));
+    EXPECT_TRUE(FileSystem::deleteFile(oldSnapData));
     testutil::writeFile(oldSnapData, "corrupted v1");
 
     VerifyResult bad = VerifyManager::run(snaps[0].path);
-    CHECK(!bad.success);
-    CHECK(bad.corrupted >= 1);
+    EXPECT_TRUE(!bad.success);
+    EXPECT_TRUE(bad.corrupted >= 1);
 
     // 新快照不受影响，应完整
     VerifyResult good = VerifyManager::run(snaps[1].path);
-    CHECK(good.success);
-    CHECK(good.corrupted == 0);
+    EXPECT_TRUE(good.success);
+    EXPECT_TRUE(good.corrupted == 0);
 }
 
 // 回归测试：AES-256 加密备份 + 解密恢复
-TEST(Encryption_BackupRestore_Aes256) {
+TEST(Encryption, BackupRestore_Aes256) {
     const std::wstring src = testutil::makeTempDir(L"enc_src");
     const std::wstring tgt = testutil::makeTempDir(L"enc_tgt");
     testutil::writeFile(src + L"secret.txt", "this is secret data");
@@ -848,18 +848,18 @@ TEST(Encryption_BackupRestore_Aes256) {
 
     // 加密备份
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
-    CHECK(r1.backedUp == 3);
+    EXPECT_TRUE(r1.success);
+    EXPECT_TRUE(r1.backedUp == 3);
 
     // 验证 data/ 中的文件是加密的（不应包含明文）
     std::string encContent = testutil::readFile(tgt + L"\\data\\secret.txt");
-    CHECK(encContent.find("secret") == std::string::npos);
+    EXPECT_TRUE(encContent.find("secret") == std::string::npos);
 
     // 验证 Manifest 记录了加密方式
     Manifest manifest;
     std::string loadErr;
-    CHECK(manifest.loadFromFile(tgt + L"\\manifest.txt", &loadErr));
-    CHECK(manifest.meta.encryption == "aes256");
+    EXPECT_TRUE(manifest.loadFromFile(tgt + L"\\manifest.txt", &loadErr));
+    EXPECT_TRUE(manifest.meta.encryption == "aes256");
 
     // 无密码恢复应失败
     RestoreConfig rcfg;
@@ -867,28 +867,28 @@ TEST(Encryption_BackupRestore_Aes256) {
     rcfg.restorePath = tgt + L"\\restore_nopass";
     rcfg.overwrite = true;
     RestoreResult r2 = RestoreManager::run(rcfg);
-    CHECK(!r2.success);
-    CHECK(r2.failed == 3);
+    EXPECT_TRUE(!r2.success);
+    EXPECT_TRUE(r2.failed == 3);
 
     // 错误密码恢复应失败
     rcfg.restorePath = tgt + L"\\restore_wrong";
     rcfg.password = "wrongpassword";
     RestoreResult r3 = RestoreManager::run(rcfg);
-    CHECK(!r3.success);
-    CHECK(r3.failed == 3);
+    EXPECT_TRUE(!r3.success);
+    EXPECT_TRUE(r3.failed == 3);
 
     // 正确密码恢复应成功
     rcfg.restorePath = tgt + L"\\restore_ok";
     rcfg.password = "testpassword123";
     RestoreResult r4 = RestoreManager::run(rcfg);
-    CHECK(r4.success);
-    CHECK(r4.restored == 3);
-    CHECK(r4.verified == 3);
+    EXPECT_TRUE(r4.success);
+    EXPECT_TRUE(r4.restored == 3);
+    EXPECT_TRUE(r4.verified == 3);
 
     // 验证恢复内容正确
-    CHECK(testutil::readFile(rcfg.restorePath + L"\\secret.txt") == "this is secret data");
-    CHECK(testutil::readFile(rcfg.restorePath + L"\\public.txt") == "public data");
-    CHECK(testutil::readFile(rcfg.restorePath + L"\\empty.txt") == "");
+    EXPECT_TRUE(testutil::readFile(rcfg.restorePath + L"\\secret.txt") == "this is secret data");
+    EXPECT_TRUE(testutil::readFile(rcfg.restorePath + L"\\public.txt") == "public data");
+    EXPECT_TRUE(testutil::readFile(rcfg.restorePath + L"\\empty.txt") == "");
 
     testutil::removeAll(src);
     testutil::removeAll(tgt);
@@ -897,7 +897,7 @@ TEST(Encryption_BackupRestore_Aes256) {
 // NIST AES-256 标准向量测试（FIPS-197 / SP 800-38A）
 // 验证自实现 AES 的正确性，而不仅是"自己解自己"。
 // 用全零 IV 时，CBC 第一块 = ECB 加密结果。
-TEST(Aes_NistVector_Aes256_EcbBlock) {
+TEST(Aes, NistVector_Aes256_EcbBlock) {
     // NIST AES-256 ECB 测试向量
     const uint8_t key[32] = {
         0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,
@@ -915,22 +915,22 @@ TEST(Aes_NistVector_Aes256_EcbBlock) {
     AesEncryptor aes(key, 32);
     // 16 字节明文会被 PKCS7 填充到 32 字节，输出 IV(16) + 密文(32) = 48 字节
     std::vector<uint8_t> result = aes.encryptWithIV(plaintext, 16, zeroIv);
-    CHECK(result.size() == 48);
+    EXPECT_TRUE(result.size() == 48);
     // 前 16 字节是 IV（全零）
-    for (size_t i = 0; i < 16; ++i) CHECK(result[i] == 0);
+    for (size_t i = 0; i < 16; ++i) EXPECT_TRUE(result[i] == 0);
     // 第一个密文块（偏移 16-31）应等于 ECB 加密结果
-    for (size_t i = 0; i < 16; ++i) CHECK(result[16 + i] == expectedCipher[i]);
+    for (size_t i = 0; i < 16; ++i) EXPECT_TRUE(result[16 + i] == expectedCipher[i]);
 
     // 解密应恢复明文
     bool decryptOk = false;
     std::vector<uint8_t> decrypted = aes.decrypt(result.data(), result.size(), &decryptOk);
-    CHECK(decryptOk);
-    CHECK(decrypted.size() == 16);
-    for (size_t i = 0; i < 16; ++i) CHECK(decrypted[i] == plaintext[i]);
+    EXPECT_TRUE(decryptOk);
+    EXPECT_TRUE(decrypted.size() == 16);
+    for (size_t i = 0; i < 16; ++i) EXPECT_TRUE(decrypted[i] == plaintext[i]);
 }
 
 // 加密备份后 verify 应通过（用密文大小/Hash 校验，不误报损坏）
-TEST(Encryption_VerifyAfterEncryptedBackup_Passes) {
+TEST(Encryption, VerifyAfterEncryptedBackup_Passes) {
     const std::wstring src = testutil::makeTempDir(L"enc_verify_src");
     const std::wstring tgt = testutil::makeTempDir(L"enc_verify_tgt");
     testutil::writeFile(src + L"secret.txt", "this is secret data");
@@ -944,24 +944,24 @@ TEST(Encryption_VerifyAfterEncryptedBackup_Passes) {
     cfg.password = "verifytest";
 
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
-    CHECK(r1.backedUp == 2);
+    EXPECT_TRUE(r1.success);
+    EXPECT_TRUE(r1.backedUp == 2);
 
     // verify 应通过（密文大小/Hash 与 Manifest 中 cipher_size/cipher_hash 一致）
     VerifyOptions vopts;
     VerifyResult vr = VerifyManager::run(tgt, vopts);
-    CHECK(vr.success);
-    CHECK(vr.total == 2);
-    CHECK(vr.passed == 2);
-    CHECK(vr.corrupted == 0);
-    CHECK(vr.missing == 0);
+    EXPECT_TRUE(vr.success);
+    EXPECT_TRUE(vr.total == 2);
+    EXPECT_TRUE(vr.passed == 2);
+    EXPECT_TRUE(vr.corrupted == 0);
+    EXPECT_TRUE(vr.missing == 0);
 
     testutil::removeAll(src);
     testutil::removeAll(tgt);
 }
 
 // 换密码增量备份应被拒绝（防止生成混血仓库）
-TEST(Encryption_IncrementWithDifferentPassword_Rejected) {
+TEST(Encryption, IncrementWithDifferentPassword_Rejected) {
     const std::wstring src = testutil::makeTempDir(L"enc_pw_src");
     const std::wstring tgt = testutil::makeTempDir(L"enc_pw_tgt");
     testutil::writeFile(src + L"a.txt", "version1");
@@ -974,7 +974,7 @@ TEST(Encryption_IncrementWithDifferentPassword_Rejected) {
     cfg1.encryption = "aes256";
     cfg1.password = "pass1";
     BackupResult r1 = BackupManager::run(cfg1);
-    CHECK(r1.success);
+    EXPECT_TRUE(r1.success);
 
     // 修改文件
     testutil::writeFile(src + L"a.txt", "version2");
@@ -987,8 +987,8 @@ TEST(Encryption_IncrementWithDifferentPassword_Rejected) {
     cfg2.encryption = "aes256";
     cfg2.password = "pass2";
     BackupResult r2 = BackupManager::run(cfg2);
-    CHECK(!r2.success);
-    CHECK(!r2.errors.empty());
+    EXPECT_TRUE(!r2.success);
+    EXPECT_TRUE(!r2.errors.empty());
 
     // 用相同密码 pass1 增量备份应成功
     BackupConfig cfg3;
@@ -998,15 +998,15 @@ TEST(Encryption_IncrementWithDifferentPassword_Rejected) {
     cfg3.encryption = "aes256";
     cfg3.password = "pass1";
     BackupResult r3 = BackupManager::run(cfg3);
-    CHECK(r3.success);
-    CHECK(r3.modified == 1);
+    EXPECT_TRUE(r3.success);
+    EXPECT_TRUE(r3.modified == 1);
 
     testutil::removeAll(src);
     testutil::removeAll(tgt);
 }
 
 // 回归测试：大文件（跨多个 1MB 分块）流式加密/解密往返
-TEST(Encryption_LargeFileStreaming_RoundTrip) {
+TEST(Encryption, LargeFileStreaming_RoundTrip) {
     const std::wstring src = testutil::makeTempDir(L"enc_large_src");
     const std::wstring tgt = testutil::makeTempDir(L"enc_large_tgt");
 
@@ -1022,12 +1022,12 @@ TEST(Encryption_LargeFileStreaming_RoundTrip) {
     cfg.encryption = "aes256";
     cfg.password = "streamtest";
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
-    CHECK(r1.backedUp == 1);
+    EXPECT_TRUE(r1.success);
+    EXPECT_TRUE(r1.backedUp == 1);
 
     // verify 应通过（密文 Hash 校验）
     VerifyResult vr = VerifyManager::run(tgt);
-    CHECK(vr.success);
+    EXPECT_TRUE(vr.success);
 
     // 恢复后应与源完全一致
     RestoreConfig rcfg;
@@ -1036,19 +1036,19 @@ TEST(Encryption_LargeFileStreaming_RoundTrip) {
     rcfg.overwrite = true;
     rcfg.password = "streamtest";
     RestoreResult rr = RestoreManager::run(rcfg);
-    CHECK(rr.success);
-    CHECK(rr.verified == 1);
+    EXPECT_TRUE(rr.success);
+    EXPECT_TRUE(rr.verified == 1);
 
     std::string restored = testutil::readFile(rcfg.restorePath + L"\\big.bin");
-    CHECK_EQ(restored.size(), big.size());
-    CHECK(restored == big);
+    EXPECT_EQ(restored.size(), big.size());
+    EXPECT_TRUE(restored == big);
 
     testutil::removeAll(src);
     testutil::removeAll(tgt);
 }
 
 // 回归测试：verify --repair 自动修复损坏文件
-TEST(Verify_Repair_CorruptedFile_RebuiltFromSource) {
+TEST(Verify, Repair_CorruptedFile_RebuiltFromSource) {
     TestEnv env;
     testutil::writeFile(env.src + L"a.txt", "original content");
     testutil::writeFile(env.src + L"b.txt", "another file");
@@ -1060,40 +1060,40 @@ TEST(Verify_Repair_CorruptedFile_RebuiltFromSource) {
 
     // 全量备份
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
+    EXPECT_TRUE(r1.success);
 
     // 手动损坏 a.txt 的备份数据
     testutil::writeFile(env.target + L"\\data\\a.txt", "corrupted!!!");
 
     // 不带 --repair 的 verify：应报告损坏
     VerifyResult v1 = VerifyManager::run(env.target);
-    CHECK(!v1.success);
-    CHECK(v1.corrupted == 1);
+    EXPECT_TRUE(!v1.success);
+    EXPECT_TRUE(v1.corrupted == 1);
 
     // 带 --repair 的 verify：应自动修复
     VerifyOptions vopts;
     vopts.repair = true;
     vopts.sourcePath = env.src;
     VerifyResult v2 = VerifyManager::run(env.target, vopts);
-    CHECK(v2.success);
-    CHECK(v2.repaired == 1);
-    CHECK(v2.corrupted == 0);
+    EXPECT_TRUE(v2.success);
+    EXPECT_TRUE(v2.repaired == 1);
+    EXPECT_TRUE(v2.corrupted == 0);
 
     // 验证文件已被修复
     std::string hash;
     HashCalculator::fileSha256(env.target + L"\\data\\a.txt", hash);
     std::string srcHash;
     HashCalculator::fileSha256(env.src + L"\\a.txt", srcHash);
-    CHECK(hash == srcHash);
+    EXPECT_TRUE(hash == srcHash);
 
     // 再次不带 --repair 的 verify：应完整
     VerifyResult v3 = VerifyManager::run(env.target);
-    CHECK(v3.success);
-    CHECK(v3.corrupted == 0);
+    EXPECT_TRUE(v3.success);
+    EXPECT_TRUE(v3.corrupted == 0);
 }
 
 // 回归测试：单一实例锁 - 并发备份被拒绝，崩溃残留锁自动清理
-TEST(BackupLock_ConcurrentBackup_Rejected) {
+TEST(BackupLock, ConcurrentBackup_Rejected) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
@@ -1102,31 +1102,31 @@ TEST(BackupLock_ConcurrentBackup_Rejected) {
 
     // 第一次备份成功
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
+    EXPECT_TRUE(r1.success);
 
     // 模拟崩溃残留：创建锁文件，写入一个不存在的 PID
     testutil::writeFile(env.target + L"\\.backup.lock", "999999\n");
     // 第二次备份应成功（自动清理崩溃残留的锁）
     BackupResult r2 = BackupManager::run(cfg);
-    CHECK(r2.success);
-    CHECK(!FileSystem::exists(env.target + L"\\.backup.lock"));
+    EXPECT_TRUE(r2.success);
+    EXPECT_TRUE(!FileSystem::exists(env.target + L"\\.backup.lock"));
 
     // 模拟另一个备份正在运行：创建锁文件，写入当前进程 PID
     const DWORD pid = GetCurrentProcessId();
     testutil::writeFile(env.target + L"\\.backup.lock", std::to_string(pid) + "\n");
     // 第三次备份应失败（被锁拒绝）
     BackupResult r3 = BackupManager::run(cfg);
-    CHECK(!r3.success);
-    CHECK(r3.errors.size() > 0);
+    EXPECT_TRUE(!r3.success);
+    EXPECT_TRUE(r3.errors.size() > 0);
     // 锁文件应仍然存在
-    CHECK(FileSystem::exists(env.target + L"\\.backup.lock"));
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\.backup.lock"));
 
     // 清理锁文件
     FileSystem::deleteFile(env.target + L"\\.backup.lock");
 }
 
 // 回归测试：锁获取必须是原子的，两个线程同时获取只能有一个成功
-TEST(BackupLock_AtomicAcquire_SingleWinner) {
+TEST(BackupLock, AtomicAcquire_SingleWinner) {
     TestEnv env;
 
     std::atomic<int> winners{0};
@@ -1149,19 +1149,19 @@ TEST(BackupLock_AtomicAcquire_SingleWinner) {
     t2.join();
 
     // CREATE_NEW 保证同一时刻只有一个线程能创建锁文件
-    CHECK_EQ(winners.load(), 1);
-    CHECK(FileSystem::exists(env.target + L"\\.backup.lock"));
+    EXPECT_EQ(winners.load(), 1);
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\.backup.lock"));
 
     // 释放获胜者持有的锁并清理
     {
         std::lock_guard<std::mutex> lk(mu);
         for (const auto& p : acquiredPaths) BackupLock::release(p);
     }
-    CHECK(!FileSystem::exists(env.target + L"\\.backup.lock"));
+    EXPECT_TRUE(!FileSystem::exists(env.target + L"\\.backup.lock"));
 }
 
 // 回归测试：用户的正常 .baktmp.old 文件不被误删
-TEST(CrashRecovery_LegalBaktmpOldFile_NotDeleted) {
+TEST(CrashRecovery, LegalBaktmpOldFile_NotDeleted) {
     TestEnv env;
     // 源目录放一个正常的 .baktmp.old 文件（用户的合法文件）
     testutil::writeFile(env.src + L"doc.txt.baktmp.old", "this is a normal file with .baktmp.old suffix");
@@ -1173,44 +1173,44 @@ TEST(CrashRecovery_LegalBaktmpOldFile_NotDeleted) {
 
     // 第一次全量备份
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
-    CHECK(FileSystem::exists(env.target + L"\\data\\doc.txt.baktmp.old"));
+    EXPECT_TRUE(r1.success);
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\doc.txt.baktmp.old"));
 
     // verify 不应把合法文件报为残留
     VerifyResult vr = VerifyManager::run(env.target);
-    CHECK(vr.residual == 0);
-    CHECK(vr.success);
+    EXPECT_TRUE(vr.residual == 0);
+    EXPECT_TRUE(vr.success);
 
     // 第二次增量备份（触发 recoverResidualData），合法文件不应被删
     cfg.mode = BackupMode::Incremental;
     BackupResult r2 = BackupManager::run(cfg);
-    CHECK(r2.success);
-    CHECK(FileSystem::exists(env.target + L"\\data\\doc.txt.baktmp.old"));
+    EXPECT_TRUE(r2.success);
+    EXPECT_TRUE(FileSystem::exists(env.target + L"\\data\\doc.txt.baktmp.old"));
 
     // verify 确认文件仍在，无缺失
     VerifyResult vr2 = VerifyManager::run(env.target);
-    CHECK(vr2.missing == 0);
-    CHECK(vr2.success);
+    EXPECT_TRUE(vr2.missing == 0);
+    EXPECT_TRUE(vr2.success);
 }
 
 // 回归测试：verify 取消回调能中止校验
-TEST(Verify_CancelCheck_Aborts) {
+TEST(Verify, CancelCheck_Aborts) {
     TestEnv env;
     BackupConfig cfg;
     cfg.sourcePath = env.src;
     cfg.targetPath = env.target;
     cfg.mode = BackupMode::Full;
     BackupResult r1 = BackupManager::run(cfg);
-    CHECK(r1.success);
+    EXPECT_TRUE(r1.success);
 
     // verify 时 cancelCheck 始终返回 true
     VerifyOptions vopts;
     vopts.cancelCheck = []() { return true; };
     VerifyResult vr = VerifyManager::run(env.target, vopts);
-    CHECK(!vr.success);
+    EXPECT_TRUE(!vr.success);
     bool foundCancel = false;
     for (const auto& e : vr.errors) {
         if (e.find(L"取消") != std::wstring::npos) foundCancel = true;
     }
-    CHECK(foundCancel);
+    EXPECT_TRUE(foundCancel);
 }

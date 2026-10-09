@@ -130,9 +130,50 @@ endif()
 
 # ============ 单元/集成测试 ============
 enable_testing()
+
+# GoogleTest：优先使用系统/包管理器安装的版本，找不到时用 FetchContent 拉取固定版本
+find_package(GTest CONFIG QUIET)
+if(NOT GTest_FOUND)
+    include(FetchContent)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.15.2
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(googletest)
+    message(STATUS "GoogleTest not found locally; fetched via FetchContent (v1.15.2)")
+else()
+    message(STATUS "GoogleTest found locally: ${GTest_DIR}")
+endif()
+
+# cppcheck 只检查本项目代码，跳过第三方 googletest 源码
+if(TARGET gtest)
+    set_target_properties(gtest PROPERTIES CXX_CPPCHECK "")
+endif()
+if(TARGET gtest_main)
+    set_target_properties(gtest_main PROPERTIES CXX_CPPCHECK "")
+endif()
+if(TARGET gmock)
+    set_target_properties(gmock PROPERTIES CXX_CPPCHECK "")
+endif()
+if(TARGET gmock_main)
+    set_target_properties(gmock_main PROPERTIES CXX_CPPCHECK "")
+endif()
+
 add_executable(backup_tests
-    tests/TestMain.cpp
     tests/TimeUtilTest.cpp
+    tests/ResidualUtilTest.cpp
+    tests/UtfTest.cpp
+    tests/ConfigLoaderTest.cpp
+    tests/LoggerTest.cpp
+    tests/ManifestEdgeTest.cpp
+    tests/AesEncryptorEdgeTest.cpp
+    tests/FileSystemTest.cpp
+    tests/FileCopierTest.cpp
+    tests/FileScannerTest.cpp
+    tests/SnapshotManagerTest.cpp
+    tests/VerifySnapshotTest.cpp
     tests/GuiTaskStoreTest.cpp
     tests/HashCalculatorTest.cpp
     tests/ManifestTest.cpp
@@ -141,5 +182,5 @@ add_executable(backup_tests
     tests/BackupRestoreTest.cpp
     src/gui/TaskStore.cpp
 )
-target_link_libraries(backup_tests PRIVATE backup_core backup_flags crypt32)
+target_link_libraries(backup_tests PRIVATE backup_core backup_flags crypt32 GTest::gtest_main)
 add_test(NAME backup_tests COMMAND backup_tests)

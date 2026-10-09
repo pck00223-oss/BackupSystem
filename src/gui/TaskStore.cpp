@@ -11,7 +11,9 @@
 
 #include "core/Utf.h"
 
+#ifdef _MSC_VER
 #pragma comment(lib, "crypt32.lib")
+#endif
 
 namespace backup {
 namespace gui {
@@ -41,7 +43,7 @@ std::string TaskStore::encryptPassword(const std::string& passwordUtf8) {
     if (passwordUtf8.empty()) return "";
     DATA_BLOB in, out;
     in.pbData = reinterpret_cast<BYTE*>(const_cast<char*>(passwordUtf8.data()));
-    in.cbData = (DWORD)passwordUtf8.size();
+    in.cbData = static_cast<DWORD>(passwordUtf8.size());
     if (!CryptProtectData(&in, L"BackupSystem_Password", nullptr, nullptr, nullptr, 0, &out)) {
         return "";
     }
@@ -62,11 +64,11 @@ std::string TaskStore::decryptPassword(const std::string& hexEncrypted) {
     for (size_t i = 0; i < data.size(); ++i) {
         unsigned int byte = 0;
         if (sscanf_s(hexEncrypted.c_str() + i * 2, "%02x", &byte) != 1) return "";
-        data[i] = (BYTE)byte;
+        data[i] = static_cast<BYTE>(byte);
     }
     DATA_BLOB in, out;
     in.pbData = data.data();
-    in.cbData = (DWORD)data.size();
+    in.cbData = static_cast<DWORD>(data.size());
     if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr, 0, &out)) {
         return "";
     }

@@ -1,5 +1,5 @@
 // ManifestTest.cpp - Manifest 序列化与查找测试
-#include "TestFramework.h"
+#include <gtest/gtest.h>
 #include "TestUtil.h"
 
 #include "business/Manifest.h"
@@ -7,7 +7,7 @@
 
 using namespace backup;
 
-TEST(Manifest_RoundTrip) {
+TEST(Manifest, RoundTrip) {
     const std::wstring dir = testutil::makeTempDir(L"manifest");
     const std::wstring file = dir + L"manifest.txt";
 
@@ -40,35 +40,35 @@ TEST(Manifest_RoundTrip) {
     m.rebuildIndex();
 
     std::string err;
-    CHECK(m.saveToFile(file, &err));
-    CHECK(err.empty());
+    EXPECT_TRUE(m.saveToFile(file, &err));
+    EXPECT_TRUE(err.empty());
 
     Manifest loaded;
-    CHECK(loaded.loadFromFile(file, &err));
-    CHECK(err.empty());
-    CHECK_EQ(loaded.entries.size(), size_t(2));
-    CHECK_EQ(loaded.meta.backupId, "20260904-200001");
-    CHECK_EQ(loaded.meta.sourcePath, L"C:\\Data");
-    CHECK_EQ(loaded.meta.backupType, "incremental");
+    EXPECT_TRUE(loaded.loadFromFile(file, &err));
+    EXPECT_TRUE(err.empty());
+    EXPECT_EQ(loaded.entries.size(), size_t(2));
+    EXPECT_EQ(loaded.meta.backupId, "20260904-200001");
+    EXPECT_EQ(loaded.meta.sourcePath, L"C:\\Data");
+    EXPECT_EQ(loaded.meta.backupType, "incremental");
 
     // 顺序与字段一致性
-    CHECK_EQ(loaded.entries[0].info.relativePath, L"dir\\a.txt");
-    CHECK_EQ(loaded.entries[0].info.size, uint64_t(123));
-    CHECK_EQ(loaded.entries[0].info.modifiedTime, uint64_t(1720000000));
-    CHECK_EQ(loaded.entries[0].info.hash, e1.info.hash);
-    CHECK_EQ(loaded.entries[1].info.relativePath, L"中文目录\\数据.txt");
-    CHECK_EQ(loaded.entries[1].dataPath, L"中文目录\\数据.txt");
+    EXPECT_EQ(loaded.entries[0].info.relativePath, L"dir\\a.txt");
+    EXPECT_EQ(loaded.entries[0].info.size, uint64_t(123));
+    EXPECT_EQ(loaded.entries[0].info.modifiedTime, uint64_t(1720000000));
+    EXPECT_EQ(loaded.entries[0].info.hash, e1.info.hash);
+    EXPECT_EQ(loaded.entries[1].info.relativePath, L"中文目录\\数据.txt");
+    EXPECT_EQ(loaded.entries[1].dataPath, L"中文目录\\数据.txt");
 
     // find
     const Manifest::Entry* found = loaded.find(L"中文目录\\数据.txt");
-    CHECK(found != nullptr);
-    CHECK(found->info.size == 42);
-    CHECK(loaded.find(L"不存在.txt") == nullptr);
+    EXPECT_TRUE(found != nullptr);
+    EXPECT_TRUE(found->info.size == 42);
+    EXPECT_TRUE(loaded.find(L"不存在.txt") == nullptr);
 
     testutil::removeAll(dir);
 }
 
-TEST(Manifest_FileCount) {
+TEST(Manifest, FileCount) {
     const std::wstring dir = testutil::makeTempDir(L"manifest2");
     const std::wstring file = dir + L"m.txt";
     Manifest m;
@@ -82,9 +82,9 @@ TEST(Manifest_FileCount) {
     }
     m.meta.fileCount = 100;
     std::string err;
-    CHECK(m.saveToFile(file, &err));
+    EXPECT_TRUE(m.saveToFile(file, &err));
     Manifest loaded;
-    CHECK(loaded.loadFromFile(file, &err));
-    CHECK_EQ(loaded.entries.size(), size_t(100));
+    EXPECT_TRUE(loaded.loadFromFile(file, &err));
+    EXPECT_EQ(loaded.entries.size(), size_t(100));
     testutil::removeAll(dir);
 }
