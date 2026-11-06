@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BackupSystem 用例图（UML Use Case Diagram）</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f0f2f5; margin: 0; padding: 28px 20px; color: #1f2329; }
+  .wrap { max-width: 1580px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .sub { color: #86909c; font-size: 13px; margin-bottom: 18px; line-height: 1.7; }
+  .card { background: #fff; border-radius: 10px; padding: 20px 24px; box-shadow: 0 2px 8px rgba(31,35,41,.08); margin-bottom: 18px; }
+  .card h2 { font-size: 16px; margin: 0 0 12px; color: #1f2329; border-left: 4px solid #5b8def; padding-left: 10px; }
+  .svg-frame { background: #fff; border: 1px solid #e5e6eb; border-radius: 8px; overflow: auto; }
+  .svg-frame svg { display: block; max-width: 100%; height: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border: 1px solid #e5e6eb; padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f7f8fa; font-weight: 600; white-space: nowrap; }
+  td code { background: #f2f3f5; padding: 1px 6px; border-radius: 3px; font-size: 12px; }
+  .tag { display: inline-block; background: #eef3fb; color: #2563eb; border: 1px solid #c8d8f7; border-radius: 4px; padding: 1px 8px; font-size: 12px; margin-right: 6px; }
+  ul { margin: 6px 0; padding-left: 20px; }
+  li { line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>BackupSystem 用例图（UML Use Case Diagram）</h1>
+  <div class="sub">参与者（Actor）与系统功能（Use Case）及其 <b>«include» / «extend»</b> 关系。标注 <b>虚线箭头</b> 为 UML 关系：<b>«include»</b> 表示基础用例必定包含的子功能，箭头指向被包含用例；<b>«extend»</b> 表示可选扩展功能，箭头指向被扩展用例。<b>实线</b> 为参与者与用例的关联。</div>
+
+  <div class="card">
+    <h2>用例图</h2>
+    <div class="svg-frame">
+      <svg xmlns="http://www.w3.org/2000/svg" width="1540" height="1120" viewBox="0 0 1540 1120" font-family="Microsoft YaHei, Segoe UI, Arial, sans-serif">
+        <defs>
+          <marker id="arrowSolid" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#3d4654"/>
+          </marker>
+          <marker id="arrowDashed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#2563eb"/>
+          </marker>
+        </defs>
+        <rect x="0" y="0" width="1540" height="1120" fill="#ffffff"/>
+        <rect x="300" y="70" width="1210" height="960" rx="14" fill="rgba(91,141,239,0.05)" stroke="#98a6b8" stroke-width="1.6"/>
+        <text x="318" y="102" font-size="17" font-weight="700" fill="#46536b">«system» BackupSystem 数据备份系统</text>
+
+        <path d="M 185 412 L 300 412 V 225 L 465 225 V 195" fill="none" stroke="#3d4654" stroke-width="1.4" marker-end="url(#arrowSolid)"/>
+        <path d="M 185 412 L 300 412 V 385 L 834 385 V 205" fill="none" stroke="#3d4654" stroke-width="1.4" marker-end="url(#arrowSolid)"/>
+        <path d="M 185 412 L 300 412 V 470 L 834 470" fill="none" stroke="#3d4654" stroke-width="1.4" marker-end="url(#arrowSolid)"/>
+        <path d="M 185 412 L 300 412 V 745 L 825 745 V 762" fill="none" stroke="#3d4654" stroke-width="1.4" marker-end="url(#arrowSolid)"/>
+        <path d="M 185 412 L 300 412 V 755 L 460 755" fill="none" stroke="#3d4654" stroke-width="1.4" marker-end="url(#arrowSolid)"/>
+        <path d="M 185 412 L 300 412 V 400 L 1020 400 V 160 H 1230" fill="none" stroke="#3d4654" stroke-width="1.4" marker-end="url(#arrowSolid)"/>
+        <path d="M 185 412 L 300 412 V 510 L 1020 510 L 1230 510 V 482" fill="none" stroke="#3d4654" stroke-width="1.4" marker-end="url(#arrowSolid)"/>
+        <path d="M 185 872 L 300 872 V 225 L 465 225 V 195" fill="none" stroke="#3d4654" stroke-width="1.4" marker-end="url(#arrowSolid)"/>
+
+        <path d="M 498 198 L 468 262" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="452" y="226" font-size="12" font-style="italic" fill="#2563eb">«include»</text>
+        <path d="M 560 205 L 560 258" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="572" y="230" font-size="12" font-style="italic" fill="#2563eb">«include»</text>
+        <path d="M 618 198 L 666 262" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="676" y="226" font-size="12" font-style="italic" fill="#2563eb">«include»</text>
+        <path d="M 920 210 L 920 262" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="932" y="233" font-size="12" font-style="italic" fill="#2563eb">«include»</text>
+        <path d="M 1265 198 L 1225 262" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="1230" y="226" font-size="12" font-style="italic" fill="#2563eb">«include»</text>
+        <path d="M 1355 198 L 1388 262" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="1396" y="226" font-size="12" font-style="italic" fill="#2563eb">«include»</text>
+        <path d="M 1265 498 L 1225 562" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="1230" y="530" font-size="12" font-style="italic" fill="#2563eb">«include»</text>
+        <path d="M 1355 498 L 1388 562" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="1396" y="530" font-size="12" font-style="italic" fill="#2563eb">«include»</text>
+
+        <path d="M 430 555 L 528 208" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="492" y="368" font-size="12" font-style="italic" fill="#2563eb">«extend»</text>
+        <path d="M 690 555 L 602 208" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="600" y="368" font-size="12" font-style="italic" fill="#2563eb">«extend»</text>
+        <path d="M 1080 428 L 962 208" fill="none" stroke="#2563eb" stroke-width="1.2" stroke-dasharray="7 5" marker-end="url(#arrowDashed)"/>
+        <text x="1035" y="322" font-size="12" font-style="italic" fill="#2563eb">«extend»</text>
+
+        <ellipse cx="560" cy="160" rx="95" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.6"/>
+        <text x="560" y="166" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2d3d">执行备份</text>
+        <ellipse cx="430" cy="300" rx="100" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="430" y="297" text-anchor="middle" font-size="13" fill="#334155">扫描目录</text>
+        <text x="430" y="315" text-anchor="middle" font-size="12" fill="#64748b">（先序遍历）</text>
+        <ellipse cx="560" cy="300" rx="78" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="560" y="306" text-anchor="middle" font-size="13" fill="#334155">变更检测</text>
+        <ellipse cx="690" cy="300" rx="72" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="690" y="306" text-anchor="middle" font-size="13" fill="#334155">复制文件</text>
+        <ellipse cx="430" cy="600" rx="82" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="430" y="606" text-anchor="middle" font-size="13" fill="#334155">加密备份</text>
+        <ellipse cx="690" cy="600" rx="82" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="690" y="606" text-anchor="middle" font-size="13" fill="#334155">保留快照</text>
+        <ellipse cx="560" cy="790" rx="100" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="560" y="796" text-anchor="middle" font-size="13" fill="#334155">注册计划任务</text>
+
+        <ellipse cx="920" cy="160" rx="86" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.6"/>
+        <text x="920" y="166" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2d3d">恢复数据</text>
+        <ellipse cx="920" cy="310" rx="72" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="920" y="316" text-anchor="middle" font-size="13" fill="#334155">数据校验</text>
+        <ellipse cx="1120" cy="460" rx="92" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="1120" y="466" text-anchor="middle" font-size="13" fill="#334155">时间点恢复</text>
+        <ellipse cx="920" cy="460" rx="86" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="920" y="466" text-anchor="middle" font-size="13" fill="#334155">校验完整性</text>
+        <ellipse cx="920" cy="790" rx="95" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="920" y="796" text-anchor="middle" font-size="13" fill="#334155">查看历史记录</text>
+
+        <ellipse cx="1310" cy="160" rx="78" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.6"/>
+        <text x="1310" y="166" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2d3d">TAR 打包</text>
+        <ellipse cx="1210" cy="310" rx="88" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="1210" y="316" text-anchor="middle" font-size="13" fill="#334155">硬链接识别</text>
+        <ellipse cx="1420" cy="310" rx="88" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="1420" y="316" text-anchor="middle" font-size="13" fill="#334155">符号链接记录</text>
+        <ellipse cx="1310" cy="460" rx="78" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.6"/>
+        <text x="1310" y="466" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2d3d">TAR 解包</text>
+        <ellipse cx="1210" cy="600" rx="88" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="1210" y="606" text-anchor="middle" font-size="13" fill="#334155">重建硬链接</text>
+        <ellipse cx="1420" cy="600" rx="88" ry="40" fill="#eef3fb" stroke="#5b8def" stroke-width="1.5"/>
+        <text x="1420" y="606" text-anchor="middle" font-size="13" fill="#334155">重建符号链接</text>
+
+        <g stroke="#20242c" stroke-width="2" stroke-linecap="round" fill="none">
+          <circle cx="160" cy="385" r="14" fill="#fff"/>
+          <line x1="160" y1="399" x2="160" y2="439"/>
+          <line x1="160" y1="411" x2="136" y2="427"/>
+          <line x1="160" y1="411" x2="184" y2="427"/>
+          <line x1="160" y1="439" x2="142" y2="463"/>
+          <line x1="160" y1="439" x2="178" y2="463"/>
+        </g>
+        <text x="160" y="488" text-anchor="middle" font-size="14" font-weight="600" fill="#20242c">用户</text>
+
+        <g stroke="#20242c" stroke-width="2" stroke-linecap="round" fill="none">
+          <circle cx="160" cy="835" r="14" fill="#fff"/>
+          <line x1="160" y1="849" x2="160" y2="889"/>
+          <line x1="160" y1="861" x2="136" y2="877"/>
+          <line x1="160" y1="861" x2="184" y2="877"/>
+          <line x1="160" y1="889" x2="142" y2="913"/>
+          <line x1="160" y1="889" x2="178" y2="913"/>
+        </g>
+        <text x="160" y="938" text-anchor="middle" font-size="13" font-weight="600" fill="#20242c">Windows 计划任务</text>
+
+        <g>
+          <rect x="70" y="1050" width="1400" height="58" rx="10" fill="#f6f8fb" stroke="#dfe5ee" stroke-width="1.2"/>
+          <g transform="translate(120,1068)" stroke="#20242c" stroke-width="1.8" stroke-linecap="round" fill="none">
+            <circle cx="10" cy="12" r="6" fill="#fff"/>
+            <line x1="10" y1="18" x2="10" y2="32"/>
+            <line x1="10" y1="22" x2="1" y2="29"/>
+            <line x1="10" y1="22" x2="19" y2="29"/>
+            <line x1="10" y1="32" x2="3" y2="42"/>
+            <line x1="10" y1="32" x2="17" y2="42"/>
+          </g>
+          <text x="152" y="1096" font-size="13" fill="#334155">参与者（外部触发者）</text>
+          <ellipse cx="340" cy="1081" rx="42" ry="17" fill="#eef3fb" stroke="#5b8def" stroke-width="1.4"/>
+          <text x="340" y="1086" text-anchor="middle" font-size="11" fill="#334155">用例</text>
+          <text x="398" y="1096" font-size="13" fill="#334155">用例（系统功能）</text>
+          <line x1="520" y1="1081" x2="590" y2="1081" stroke="#3d4654" stroke-width="2"/>
+          <text x="610" y="1096" font-size="13" fill="#334155">关联（参与者参与用例）</text>
+          <line x1="790" y1="1081" x2="870" y2="1081" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="7 5"/>
+          <polygon points="870,1077 880,1081 870,1085" fill="#2563eb"/>
+          <text x="892" y="1086" font-size="12" font-style="italic" fill="#2563eb">«include» / «extend»</text>
+          <text x="892" y="1102" font-size="11" fill="#64748b">包含 / 扩展关系</text>
+          <rect x="1100" y="1066" width="70" height="30" rx="5" fill="rgba(91,141,239,0.05)" stroke="#98a6b8" stroke-width="1.4"/>
+          <text x="1188" y="1096" font-size="13" fill="#334155">系统边界</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>符号说明（UML 标准）</h2>
+    <table>
+      <tr><th>符号</th><th>名称</th><th>含义</th></tr>
+      <tr><td>火柴人</td><td>参与者 Actor</td><td>系统外部的触发者：<span class="tag">用户</span>（手动操作）与 <span class="tag">Windows 计划任务</span>（定时触发）</td></tr>
+      <tr><td>椭圆</td><td>用例 Use Case</td><td>系统对外提供的一项完整功能，共 17 个</td></tr>
+      <tr><td>实线箭头</td><td>关联 Association</td><td>参与者参与了该用例</td></tr>
+      <tr><td>虚线箭头 + «include»</td><td>包含关系</td><td>基础用例的执行<b>必然</b>包含箭头所指的子用例（箭头指向被包含用例）</td></tr>
+      <tr><td>虚线箭头 + «extend»</td><td>扩展关系</td><td>在满足条件时<b>可选</b>地加入箭头所指的基础用例（箭头指向被扩展用例）</td></tr>
+      <tr><td>圆角大矩形</td><td>系统边界</td><td>边界内是用例，边界外是参与者</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>功能覆盖对照</h2>
+    <table>
+      <tr><th>用例</th><th>实现</th><th>关系说明</th></tr>
+      <tr><td>执行备份</td><td>BackupManager（全量 / 增量）</td><td>«include» 扫描目录（FileScanner 先序遍历）、«include» 变更检测（FileComparator 元数据 + SHA-256）、«include» 复制文件（FileCopier 原子写入）</td></tr>
+      <tr><td>加密备份</td><td>IEncryptionAlgorithm（AesCipher AES-256 / TripleDesCipher 3DES，BCrypt 系统库，1MB 分块流式）</td><td>«extend» 执行备份（可选，--encrypt aes256|3des）；恢复前密码前置校验</td></tr>
+      <tr><td>保留快照</td><td>SnapshotManager（硬链接快照，自动清理最旧）</td><td>«extend» 执行备份（可选，--keep-snapshots N）</td></tr>
+      <tr><td>恢复数据</td><td>RestoreManager（恢复后 Hash 校验）</td><td>«include» 数据校验；«extend» 时间点恢复（--snapshot）</td></tr>
+      <tr><td>校验完整性</td><td>VerifyManager（Manifest 与 data/ 一致性 + 快照）</td><td>参与者直接使用；--repair 从源重建</td></tr>
+      <tr><td>查看历史记录</td><td>history.log / history 子命令</td><td>参与者直接使用</td></tr>
+      <tr><td>TAR 打包</td><td>TarPacker（纯手工 ustar，512 字节块）</td><td>«include» 硬链接识别（(volumeSerial,fileIndex) ⇔ (st_dev,st_ino)）、«include» 符号链接记录（SYMLINK + linkname）</td></tr>
+      <tr><td>TAR 解包</td><td>TarPacker::extractTo</td><td>«include» 重建硬链接（CreateHardLinkW）、«include» 重建符号链接（CreateSymbolicLinkW）</td></tr>
+      <tr><td>注册计划任务</td><td>ScheduleManager（schtasks XML，到点自动执行）</td><td>Windows 计划任务作为第二参与者触发「执行备份」</td></tr>
+    </table>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>BackupSystem 数据备份顺序图（TAR 打包 / 硬链接 / 软链接）</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; background: #f5f6f8; margin: 0; padding: 24px; }
+  h1 { font-size: 20px; color: #1f2329; }
+  .sub { color: #86909c; font-size: 13px; margin-bottom: 16px; }
+  .card { background: #fff; border-radius: 8px; padding: 16px 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); max-width: 1000px; margin: 0 auto; }
+  table { border-collapse: collapse; margin-top: 12px; width: 100%; font-size: 13px; }
+  th, td { border: 1px solid #e5e6eb; padding: 6px 10px; text-align: left; }
+  th { background: #f2f3f5; }
+  code { background: #f2f3f5; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="card">
+<h1>BackupSystem 数据备份 UML 顺序图</h1>
+<div class="sub">对应课程《五、打包解包》课堂顺序图：GUI → CDataBackup → CConfigManager → CFileEnumerator，alt 选择打包算法后 pack。下方为本项目的实现。</div>
+<pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant GUI as backupgui / backupapp
+    participant BM as BackupManager
+    participant CFG as ConfigManager
+    participant SC as FileScanner
+    participant FS as FileSystem
+    participant TAR as TarPacker (ustar 手工实现)
+
+    GUI->>BM: doBackup(source, target, mode)
+    BM->>CFG: getConfig()
+    CFG-->>BM: 返回配置（快照数/加密/过滤器）
+    BM->>SC: enumerateFiles(source)
+    SC->>FS: 逐条目读取文件头 struct FileInfo
+    FS-->>SC: fileIndex / linkCount / symlinkTarget / mode
+    SC-->>BM: 先序遍历结果（文件/目录/硬链接/符号链接）
+    Note over BM: 建立 (volumeSerial,fileIndex) → 首个路径映射
+    alt 演示打包（pack 子命令）
+        BM->>TAR: packDirectory(source, out.tar)
+        Note over TAR: REGULAR 写数据<br/>HARDLINK 指向首个条目<br/>SYMLINK 记录 linkname
+        TAR-->>BM: 512 字节块交替写出，末尾两个全零块
+    else 常规备份
+        BM->>BM: 增量比较 + 复制 data/ + 统一重建硬链接
+    end
+    BM-->>GUI: 返回备份结果（BackupResult，含硬链接/符号链接条目）
+</pre>
+<h1>实现要点</h1>
+<table>
+  <tr><th>模块</th><th>对应知识点</th></tr>
+  <tr><td><code>struct FileInfo</code>（include/core/FileInfo.h）</td><td>文件头结构：<code>(volumeSerial,fileIndex)</code> ⇔ Unix <code>(st_dev,st_ino)</code>；<code>linkCount</code> ⇔ <code>st_nlink</code>；<code>mode</code>/<code>symlinkTarget</code>/<code>hardLinkTo</code></td></tr>
+  <tr><td><code>FileScanner::scan</code></td><td>文件遍历接口，<b>先序遍历</b>（父先于子），每目录内排序保证确定性；符号链接记录目标</td></tr>
+  <tr><td><code>TarPacker</code>（src/engine/TarPacker.cpp）</td><td>打包接口，<b>纯手工 ustar</b>：512 字节块、八进制字段、checksum、prefix/name 拆分；REGULAR '0' / HARDLINK '1' / SYMLINK '2' / DIRECTORY '5'</td></tr>
+  <tr><td><code>FileSystem::createHardLink/createSymlink</code></td><td>解包/恢复时用 Win32 重建硬链接与符号链接</td></tr>
+</table>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', sequence: { mirrorActors: false } });</script>
+</body>
+</html>

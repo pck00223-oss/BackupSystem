@@ -146,32 +146,36 @@ VerifyResult VerifyManager::run(const std::wstring& backupRoot, const VerifyOpti
 
         // 2c. 计算 Hash 并比较（加密文件用密文 Hash，未加密文件用明文 Hash）
         const std::string& expectedHash = encryptedEntry ? e.cipherHash : e.info.hash;
-        std::string actualHash;
-        if (!HashCalculator::fileSha256(dataPath, actualHash)) {
-            ++res.corrupted;
-            res.errors.push_back(std::wstring(L"[损坏] ") + e.info.relativePath + L" (无法计算 Hash)");
-            continue;
-        }
-        if (actualHash != expectedHash) {
-            if (opts.repair && !encryptedEntry) {
-                std::wstring repairErr;
-                if (tryRepairEntry(e, dataDir, opts.sourcePath, repairErr)) {
-                    ++res.repaired;
-                    ++res.passed;
-                    res.repairedDetails.push_back(std::wstring(L"[已修复] Hash 不一致文件已从源目录重建: ") + e.info.relativePath);
+        // 硬链接非首个条目在 Manifest 中不记录独立 Hash（data 与组内首条目共享同一物理文件，
+        // 首条目已校验过）；expectedHash 为空时跳过内容比较。
+        if (!expectedHash.empty()) {
+            std::string actualHash;
+            if (!HashCalculator::fileSha256(dataPath, actualHash)) {
+                ++res.corrupted;
+                res.errors.push_back(std::wstring(L"[损坏] ") + e.info.relativePath + L" (无法计算 Hash)");
+                continue;
+            }
+            if (actualHash != expectedHash) {
+                if (opts.repair && !encryptedEntry) {
+                    std::wstring repairErr;
+                    if (tryRepairEntry(e, dataDir, opts.sourcePath, repairErr)) {
+                        ++res.repaired;
+                        ++res.passed;
+                        res.repairedDetails.push_back(std::wstring(L"[已修复] Hash 不一致文件已从源目录重建: ") + e.info.relativePath);
+                        continue;
+                    }
+                    ++res.corrupted;
+                    res.errors.push_back(std::wstring(L"[损坏] ") + e.info.relativePath +
+                                          L" (Hash 不一致: 期望 " + utf8ToWide(expectedHash.substr(0, 16)) +
+                                          L"..., 实际 " + utf8ToWide(actualHash.substr(0, 16)) + L"...; 修复失败: " + repairErr + L")");
                     continue;
                 }
                 ++res.corrupted;
                 res.errors.push_back(std::wstring(L"[损坏] ") + e.info.relativePath +
                                       L" (Hash 不一致: 期望 " + utf8ToWide(expectedHash.substr(0, 16)) +
-                                      L"..., 实际 " + utf8ToWide(actualHash.substr(0, 16)) + L"...; 修复失败: " + repairErr + L")");
+                                      L"..., 实际 " + utf8ToWide(actualHash.substr(0, 16)) + L"...)");
                 continue;
             }
-            ++res.corrupted;
-            res.errors.push_back(std::wstring(L"[损坏] ") + e.info.relativePath +
-                                  L" (Hash 不一致: 期望 " + utf8ToWide(expectedHash.substr(0, 16)) +
-                                  L"..., 实际 " + utf8ToWide(actualHash.substr(0, 16)) + L"...)");
-            continue;
         }
 
         ++res.passed;

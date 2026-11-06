@@ -1,12 +1,12 @@
 # BackupSystem - 基于 C++/Win32 的本地数据备份软件
 
 ![Build](https://github.com/pck00223-oss/BackupSystem/actions/workflows/ci.yml/badge.svg)
-![Tests](https://img.shields.io/badge/tests-103-brightgreen)
+![Tests](https://img.shields.io/badge/tests-106-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 面向 Windows 平台的本地数据备份工具。采用**分层架构 + 面向对象设计**，运行时零第三方依赖，
-实现全量/增量备份、数据恢复、完整性校验、快照与时间点恢复、AES-256 加密、Win32 原生 GUI、
-Windows 计划任务集成等完整功能。
+实现全量/增量备份、数据恢复、完整性校验、快照与时间点恢复、AES-256/3DES 双算法加密、Win32 原生 GUI、
+Windows 计划任务集成、TAR 打包（自实现 ustar，支持硬链接/软链接）等完整功能。
 
 ## 功能亮点
 
@@ -16,19 +16,23 @@ Windows 计划任务集成等完整功能。
 | 数据恢复 | 恢复后 Hash 校验，冲突时可选覆盖/跳过，支持从指定快照时间点恢复 |
 | 完整性校验 | `verify` 子命令按 Manifest 校验 data/ 与全部快照，报告缺失/损坏；`--repair` 自动重建损坏条目 |
 | 快照与时间点恢复 | `--keep-snapshots N` 保留最近 N 份完整快照（硬链接节省空间），超过自动清理最旧 |
-| AES-256 加密 | 自实现 AES-256-CBC，BCryptGenRandom 安全 IV，1MB 分块流式加密（大文件不爆内存），NIST 标准向量验证通过 |
+| 双算法加密（策略模式） | 抽象接口 `IEncryptionAlgorithm` + 两个具体策略 `AesCipher`(AES-256-CBC，块16/密钥32)、`TripleDesCipher`(3DES-CBC，块8/密钥24)，均调用 Windows CNG/BCrypt 系统库（不手写轮函数）；BCryptGenRandom 安全 IV，1MB 分块流式加密，NIST 标准向量验证通过 |
+| 密码快速前置校验 | 恢复时在解密任何文件前先用 `passwordVerifier` 比对密码，密码缺失/错误立即返回，不逐个文件解密，加快校验速度 |
 | Win32 原生 GUI | `backupgui.exe` 零依赖桌面界面：任务列表、新建/备份/恢复/校验、实时日志与进度、任务配置持久化（DPAPI 加密密码） |
 | Windows 计划任务 | `schedule --register` 注册为系统计划任务，到点自动备份完成后退出，无需程序常驻 |
 | 单一实例锁 | 防止计划任务与手动备份同时写同一 target |
 | 崩溃恢复 | 类型互换时残留 `.baktmp.old` 自动检测与还原，verify 报告异常残留 |
+| TAR 打包/解包 | `pack`/`unpack` 子命令，**纯手工实现 ustar**（512 字节块、八进制字段、checksum、prefix/name 拆分），不调第三方库 |
+| 硬链接/软链接 | 遍历用 `struct FileInfo` 文件头（`(volumeSerial,fileIndex)` ⇔ `(st_dev,st_ino)`）识别硬链接；打包时同 inode 只存一份数据、其余发 `HARDLINK('1')`；符号链接记录目标发 `SYMLINK('2')`，解包用 `CreateHardLink`/`CreateSymbolicLink` 重建 |
+| 先序遍历 | 文件遍历接口按先序输出（父先于子），每目录内排序保证确定性；符号链接记录目标而非跳过 |
 
 ## 技术栈
 
 - **语言**：C++17
 - **平台**：Windows（Win32 API，运行时零第三方依赖）
 - **构建**：CMake + Ninja / MSVC
-- **加密**：自实现 AES-256-CBC + SHA-256（NIST 标准向量验证），BCryptGenRandom 生成 IV
-- **测试**：GoogleTest（`find_package(GTest)` 优先，FetchContent 兜底），103 个用例
+- **加密**：Windows CNG/BCrypt 系统库实现 AES-256-CBC + SHA-256 密钥派生（NIST 标准向量验证），BCryptGenRandom 生成 IV
+- **测试**：GoogleTest（`find_package(GTest)` 优先，FetchContent 兜底），106 个用例
 - **CI**：GitHub Actions（strict 构建 + 全部测试 + cppcheck + 加固构建）
 
 ## 架构设计（分层）
@@ -41,7 +45,9 @@ Application 层  TaskStore / TaskScheduler / ConfigLoader / ScheduleManager
 Business 层     BackupManager / RestoreManager / VerifyManager
                 Manifest / FileComparator / FileFilter / SnapshotManager
       ↓
-File Engine 层  FileScanner / FileCopier / FileSystem / HashCalculator / AesEncryptor
+File Engine 层  FileScanner / FileCopier / FileSystem / HashCalculator
+                IEncryptionAlgorithm（AesCipher / TripleDesCipher，BCrypt）
+                TarPacker（自实现 ustar）
       ↓
 Windows API     CreateFileW / FindFirstFileW / ReadFile / WriteFile / MoveFileExW / BCryptGenRandom
 ```
@@ -73,6 +79,8 @@ BackupSystem/
 ├── CMakeLists.txt
 ├── README.md
 ├── 数据备份软件设计与实现方案.md   ← 需求文档
+├── docs/tar-packing-and-links.md  ← TAR 打包/硬链接/软链接/先序遍历实现说明（含 UML 顺序图）
+├── docs/backup-usecase.svg / .html / .png  ← 系统 UML 用例图（17 个用例，«include»/«extend» 关系）
 ├── include/   头文件（按层分包：core / engine / business / app / gui）
 ├── src/       实现文件（main.cpp CLI 入口 / gui_main.cpp GUI 入口）
 ├── tests/     单元与集成测试（GoogleTest，103 个用例）
@@ -121,8 +129,9 @@ build\backupapp.exe backup --source D:\MyData --target D:\Backup --type incremen
 # 保留最近 5 份快照
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full --keep-snapshots 5
 
-# AES-256 加密备份
+# AES-256 加密备份（也可改用 --encrypt 3des）
 build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full --encrypt aes256 --password mysecret
+build\backupapp.exe backup --source D:\MyData --target D:\Backup --type full --encrypt 3des --password mysecret
 
 # 恢复（可选 --overwrite 覆盖已存在文件，默认跳过）
 build\backupapp.exe restore --backup D:\Backup --to E:\Restored --overwrite
@@ -138,6 +147,12 @@ build\backupapp.exe verify --backup D:\Backup --repair --source D:\MyData
 
 # 注册为 Windows 计划任务（每天 20:00 自动备份，需管理员）
 build\backupapp.exe schedule --register --time 20:00 --source D:\MyData --target D:\Backup --type full
+
+# 打包为 TAR（自动识别硬链接只存一份、符号链接记录目标，纯手工 ustar 实现）
+build\backupapp.exe pack --source D:\MyData --output D:\backup.tar
+
+# 解包 TAR（重建硬链接/符号链接）
+build\backupapp.exe unpack --input D:\backup.tar --output E:\Restored
 
 # 启动 GUI
 build\backupgui.exe
@@ -170,7 +185,7 @@ build\backup_tests.exe
 | 文件复制中途失败 | 先写同目录临时文件，成功后原子替换，不截断原文件 |
 | 恢复覆盖模式 | 不再"先删后写"，失败时原文件保留 |
 | 目标在源目录内/等于源 | 启动时校验并拒绝，防止自我膨胀 |
-| junction/符号链接成环 | 默认跳过 reparse point，记录为警告 |
+| junction/符号链接成环 | 遍历默认记录符号链接目标（不跟随递归，防环），备份时仅入 Manifest |
 | 子目录无权访问 | 扫描错误计入失败，不返回"成功但缺文件" |
 | 备份仓库损坏 | verify 独立校验 Manifest 与 data/ 及全部快照一致性 |
 | 类型互换崩溃残留 | `.baktmp.old` 自动检测与还原，verify 报告异常 |
@@ -179,7 +194,7 @@ build\backup_tests.exe
 
 ## 测试与 CI
 
-- **103 个 GoogleTest 用例**（102 通过 + 1 个条件跳过：符号链接用例需要开发者模式/管理员权限），覆盖：备份/恢复/校验/增量检测/加密/NIST 标准向量/快照/崩溃恢复/GUI 任务持久化/大文件流式加密/接口边界
+- **111 个 GoogleTest 用例**（109 通过 + 2 个条件跳过：符号链接用例需要开发者模式/管理员权限），覆盖：备份/恢复/校验/增量检测/双算法加密（AES/3DES 块边界与接口多态）/NIST 标准向量/密码前置校验/快照/崩溃恢复/GUI 任务持久化/大文件流式加密/接口边界/TAR 打包解包/硬链接与符号链接/先序遍历
 - 测试环境隔离：`TempDir`（RAII 清理）、`EnvGuard`（环境变量与工作目录还原）、`LoggerGuard`（全局单例复位）
 - 测试依赖：GoogleTest（`find_package(GTest)` 优先；未安装时 CMake 自动 FetchContent 拉取 v1.15.2），运行时零第三方依赖
 - **GitHub Actions CI**：每次 push 自动执行 strict 构建（0 警告）+ 全部测试 + cppcheck（0 告警）+ 加固构建

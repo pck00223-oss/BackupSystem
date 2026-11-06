@@ -83,7 +83,8 @@ endif()
 # ============ 核心库（分层：core / engine / business / app）============
 add_library(backup_core STATIC
     src/core/BackupLock.cpp
-    src/core/AesEncryptor.cpp
+    src/core/BcryptBlockCipher.cpp
+    src/core/EncryptionFactory.cpp
     src/core/Error.cpp
     src/core/HashCalculator.cpp
     src/core/Logger.cpp
@@ -92,6 +93,7 @@ add_library(backup_core STATIC
     src/engine/FileCopier.cpp
     src/engine/FileScanner.cpp
     src/engine/FileSystem.cpp
+    src/engine/TarPacker.cpp
     src/business/BackupManager.cpp
     src/business/FileComparator.cpp
     src/business/FileFilter.cpp
@@ -168,10 +170,11 @@ add_executable(backup_tests
     tests/ConfigLoaderTest.cpp
     tests/LoggerTest.cpp
     tests/ManifestEdgeTest.cpp
-    tests/AesEncryptorEdgeTest.cpp
+    tests/EncryptionAlgorithmTest.cpp
     tests/FileSystemTest.cpp
     tests/FileCopierTest.cpp
     tests/FileScannerTest.cpp
+    tests/TarPackerTest.cpp
     tests/SnapshotManagerTest.cpp
     tests/VerifySnapshotTest.cpp
     tests/GuiTaskStoreTest.cpp

@@ -363,7 +363,8 @@ void MainWindow::refreshTaskList() {
         const auto& t = tasks_[i];
         std::wstring display = t.name + L"  [" +
             (t.mode == BackupMode::Incremental ? L"增量" : L"全量") + L"]";
-        if (t.encryption == "aes256") display += L" [加密]";
+        if (t.encryption == "aes256") display += L" [AES-256]";
+        else if (t.encryption == "3des") display += L" [3DES]";
         SendMessageW(taskList_, LB_ADDSTRING, 0, (LPARAM)display.c_str());
     }
     if (selectedIndex_ >= 0 && selectedIndex_ < (int)tasks_.size()) {
@@ -685,6 +686,7 @@ static INT_PTR CALLBACK newTaskDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARA
                 95, y - 26, 150, 100, hDlg, (HMENU)IDC_ENCRYPT, nullptr, nullptr);
             SendMessageW(data->hEncrypt, CB_ADDSTRING, 0, (LPARAM)L"不加密");
             SendMessageW(data->hEncrypt, CB_ADDSTRING, 0, (LPARAM)L"AES-256");
+            SendMessageW(data->hEncrypt, CB_ADDSTRING, 0, (LPARAM)L"3DES");
             SendMessageW(data->hEncrypt, CB_SETCURSEL, 0, 0);
 
             createLabel(L"密码:", 28);
@@ -712,7 +714,7 @@ static INT_PTR CALLBACK newTaskDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARA
             int id = LOWORD(wParam);
             if (id == IDC_ENCRYPT && HIWORD(wParam) == CBN_SELCHANGE) {
                 int sel = (int)SendMessageW(data->hEncrypt, CB_GETCURSEL, 0, 0);
-                EnableWindow(data->hPassword, sel == 1);
+                EnableWindow(data->hPassword, sel != 0);  // 1=AES, 2=3DES 均需密码
             }
             if (id == IDC_BROWSE_SRC || id == IDC_BROWSE_TGT) {
                 BROWSEINFOW bi = {0};
@@ -741,7 +743,7 @@ static INT_PTR CALLBACK newTaskDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARA
                 }
 
                 int encSel = (int)SendMessageW(data->hEncrypt, CB_GETCURSEL, 0, 0);
-                if (encSel == 1 && wcslen(password) == 0) {
+                if (encSel != 0 && wcslen(password) == 0) {
                     MessageBoxW(hDlg, L"加密模式下请输入密码。", L"提示", MB_OK | MB_ICONWARNING);
                     return TRUE;
                 }
@@ -765,7 +767,8 @@ static INT_PTR CALLBACK newTaskDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARA
                 data->outTask->targetPath = target;
                 data->outTask->mode = (SendMessageW(data->hMode, CB_GETCURSEL, 0, 0) == 1)
                     ? BackupMode::Incremental : BackupMode::Full;
-                data->outTask->encryption = (encSel == 1) ? "aes256" : "none";
+                data->outTask->encryption =
+                    (encSel == 1) ? "aes256" : (encSel == 2) ? "3des" : "none";
                 data->outTask->password = (encSel == 1) ? backup::wideToUtf8(password) : "";
                 data->outTask->keepSnapshots = keepSnap;
 

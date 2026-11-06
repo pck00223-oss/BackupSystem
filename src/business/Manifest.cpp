@@ -57,6 +57,14 @@ bool Manifest::saveToFile(const std::wstring& path, std::string* err) const {
         body += "mtime_100ns=" + std::to_string(e.info.modifiedTime100ns) + "\n";
         body += "hash=" + e.info.hash + "\n";
         body += "data=" + wideToUtf8(e.dataPath) + "\n";
+        // 符号链接目标（type==Symlink 时）
+        if (e.info.type == FileType::Symlink && !e.info.symlinkTarget.empty()) {
+            body += "symlink=" + wideToUtf8(e.info.symlinkTarget) + "\n";
+        }
+        // 硬链接组非首个条目（指向首个文件）
+        if (!e.info.hardLinkTo.empty()) {
+            body += "hardlink=" + wideToUtf8(e.info.hardLinkTo) + "\n";
+        }
         if (e.cipherSize > 0) {
             body += "cipher_size=" + std::to_string(e.cipherSize) + "\n";
         }
@@ -161,6 +169,12 @@ bool Manifest::loadFromFile(const std::wstring& path, std::string* err) {
             else if (key == "mtime_100ns") cur.info.modifiedTime100ns = safeStoull(val, "mtime_100ns");
             else if (key == "hash") { cur.info.hash = val; cur.info.hashed = !val.empty(); }
             else if (key == "data") cur.dataPath = utf8ToWide(val);
+            else if (key == "symlink") {
+                cur.info.symlinkTarget = utf8ToWide(val);
+            }
+            else if (key == "hardlink") {
+                cur.info.hardLinkTo = utf8ToWide(val);
+            }
             else if (key == "cipher_size") cur.cipherSize = safeStoull(val, "cipher_size");
             else if (key == "cipher_hash") cur.cipherHash = val;
         }

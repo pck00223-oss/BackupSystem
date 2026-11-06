@@ -7,12 +7,15 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <map>
+#include <utility>
 
 #include "business/FileComparator.h"
 #include "business/FileFilter.h"
 #include "business/Manifest.h"
 #include "business/SnapshotManager.h"
-#include "core/AesEncryptor.h"
+#include "core/IEncryptionAlgorithm.h"
+#include "core/PasswordUtil.h"
 #include "core/BackupLock.h"
 #include "core/HashCalculator.h"
 #include "core/Logger.h"
@@ -35,13 +38,18 @@ std::wstring BackupManager::historyPathOf(const std::wstring& target) {
     return target + L"\\history.log";
 }
 
-// 加密并写入文件：读取源文件全部内容，AES-256-CBC 加密后写入目标。
-// 加密文件格式：前 16 字节 IV，后续密文（PKCS7 填充）。
+// 加密并写入文件：读取源文件，按指定算法（aes256/3des）CBC 加密后写入目标。
+// 加密文件格式：前 blockSize 字节 IV，后续密文（PKCS7 填充）。
 static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
-                                const std::string& password, std::string& err) {
+                                const std::string& algorithm, const std::string& password,
+                                std::string& err) {
     std::ifstream ifs(src.c_str(), std::ios::binary);
     if (!ifs) { err = "cannot open source file"; return false; }
-    AesEncryptor aes(password);
+
+    // 面向接口创建具体加密器（AES/3DES），块大小由算法决定，不写死。
+    auto cipher = createEncryptionAlgorithm(algorithm, password);
+    if (!cipher) { err = "unknown encryption algorithm: " + algorithm; return false; }
+    const size_t bs = cipher->blockSize();
 
     // 写入目标（用 GetTempFileNameW 生成唯一临时文件名，避免与合法文件撞名，再原子替换）
     const size_t pos = dst.find_last_of(L"\\/");
@@ -55,18 +63,18 @@ static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
     std::ofstream ofs(tmp.c_str(), std::ios::binary | std::ios::trunc);
     if (!ofs) { err = "cannot open temp file for write"; ::DeleteFileW(tmp.c_str()); return false; }
 
-    // IV(16) + CBC 流式加密（分块读入，避免大文件占满内存）
-    uint8_t iv[16] = {};
-    AesEncryptor::generateRandomIv(iv);
-    ofs.write(reinterpret_cast<const char*>(iv), 16);
+    // IV(bs) + CBC 流式加密（分块读入，避免大文件占满内存）
+    std::vector<uint8_t> iv(bs);
+    cipher->generateRandomIv(iv.data());
+    ofs.write(reinterpret_cast<const char*>(iv.data()), static_cast<std::streamsize>(bs));
 
-    uint8_t prev[16] = {};
-    std::memcpy(prev, iv, 16);
+    std::vector<uint8_t> prev(bs);
+    std::memcpy(prev.data(), iv.data(), bs);
 
     constexpr size_t kChunkSize = 1024 * 1024;
     std::vector<uint8_t> readBuf(kChunkSize);
     std::vector<uint8_t> pending;
-    std::vector<uint8_t> cipher;
+    std::vector<uint8_t> cipherBuf;
     pending.reserve(kChunkSize + 32);
 
     while (ifs) {
@@ -76,12 +84,12 @@ static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
         if (got > 0) {
             pending.insert(pending.end(), readBuf.begin(), readBuf.begin() + got);
         }
-        const size_t full = pending.size() - pending.size() % 16;
+        const size_t full = pending.size() - pending.size() % bs;
         if (full > 0) {
-            cipher.resize(full);
-            aes.encryptCbcBlocks(pending.data(), full / 16, cipher.data(), prev);
-            ofs.write(reinterpret_cast<const char*>(cipher.data()),
-                      static_cast<std::streamsize>(cipher.size()));
+            cipherBuf.resize(full);
+            cipher->encryptCbcBlocks(pending.data(), full / bs, cipherBuf.data(), prev.data());
+            ofs.write(reinterpret_cast<const char*>(cipherBuf.data()),
+                      static_cast<std::streamsize>(cipherBuf.size()));
             pending.erase(pending.begin(), pending.begin() + static_cast<ptrdiff_t>(full));
         }
         if (!ifs && !ifs.eof()) {
@@ -93,12 +101,12 @@ static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
     }
 
     // PKCS7 填充最后一块并加密
-    const size_t padLen = 16 - pending.size() % 16;
+    const size_t padLen = bs - pending.size() % bs;
     for (size_t i = 0; i < padLen; ++i) pending.push_back(static_cast<uint8_t>(padLen));
-    cipher.resize(pending.size());
-    aes.encryptCbcBlocks(pending.data(), pending.size() / 16, cipher.data(), prev);
-    ofs.write(reinterpret_cast<const char*>(cipher.data()),
-              static_cast<std::streamsize>(cipher.size()));
+    cipherBuf.resize(pending.size());
+    cipher->encryptCbcBlocks(pending.data(), pending.size() / bs, cipherBuf.data(), prev.data());
+    ofs.write(reinterpret_cast<const char*>(cipherBuf.data()),
+              static_cast<std::streamsize>(cipherBuf.size()));
     ofs.flush();
     if (!ofs) { ofs.close(); ::DeleteFileW(tmp.c_str()); err = "write encrypted file failed"; return false; }
     ofs.close();
@@ -109,13 +117,6 @@ static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
         return false;
     }
     return true;
-}
-
-// 计算密码验证标记：SHA256(password + 固定盐)，用于增量时检测密码切换。
-// 注意：这不是密码学安全的密码存储，仅用于检测密码是否改变；后续可升级为 PBKDF2+随机盐。
-static std::string computePasswordVerifier(const std::string& password) {
-    const std::string salted = password + "|BackupSystem_AES_Password_Verifier_v1";
-    return HashCalculator::bufferSha256(salted.data(), salted.size());
 }
 
 // 从当前 data/ 和 manifest.txt 创建快照。
@@ -303,6 +304,21 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     // 筛选针对文件内容，目录结构应完整保留以便恢复时重建目录树）。
     std::vector<FileInfo> files = filter.filter(scanned, /*keepDirectories=*/true);
 
+    // ---- 标记硬链接关系（对应 Unix 多个目录项指向同一 inode）----
+    // 同一卷(volumeSerial)+文件索引(fileIndex)的多个普通文件：首个为普通文件，
+    // 后续 hardLinkTo 指向首个。复制时用 CreateHardLink 只存一份，恢复时重建。
+    std::map<std::pair<uint32_t, uint64_t>, std::wstring> firstByInode;
+    for (FileInfo& f : files) {
+        if (f.type != FileType::File) continue;
+        auto key = std::make_pair(f.volumeSerial, f.fileIndex);
+        auto it = firstByInode.find(key);
+        if (it == firstByInode.end()) {
+            firstByInode[key] = f.relativePath;
+        } else {
+            f.hardLinkTo = it->second;
+        }
+    }
+
     // ---- 4. 加载旧 Manifest，判断是否可增量 ----
     const std::wstring manifestPath = manifestPathOf(config.targetPath);
     Manifest previous;
@@ -313,7 +329,8 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     // 增量模式：未变化文件跳过复制，换加密方式/密码会生成混血仓库，必须禁止。
     // 全量模式：允许换加密方式，但需要强制重新复制所有文件（见比较后的 encryptionChanged 处理）。
     const bool prevEncrypted = hasPrevious && (!previous.meta.encryption.empty() && previous.meta.encryption != "none");
-    const bool curEncrypted = (config.encryption == "aes256") && !config.password.empty();
+    const bool curEncrypted =
+        (config.encryption == "aes256" || config.encryption == "3des") && !config.password.empty();
     const bool encryptionChanged = hasPrevious && (prevEncrypted != curEncrypted);
 
     if (incremental) {
@@ -459,6 +476,23 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
             newEntries.push_back(std::move(e));
             continue;
         }
+        // 符号链接：只记录链接本身（目标路径），不复制内容，data/ 中无数据文件。
+        if (c.info.type == FileType::Symlink) {
+            Manifest::Entry e;
+            e.info = c.info;
+            e.dataPath = c.info.relativePath;
+            newEntries.push_back(std::move(e));
+            continue;
+        }
+        // 硬链接非首个：不独立复制内容，直接进 Manifest（hardLinkTo 指向首个）。
+        // 实际链接关系在所有首个文件复制完成后，由后处理统一建立。
+        if (!c.info.hardLinkTo.empty()) {
+            Manifest::Entry e;
+            e.info = c.info;
+            e.dataPath = c.info.relativePath;
+            newEntries.push_back(std::move(e));
+            continue;
+        }
         if (cancel && cancel()) {
             res.cancelled = true;
             res.errors.push_back(L"备份被用户取消");
@@ -498,10 +532,11 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         }
 
         std::string copyErr;
-        const bool useEncryption = (config.encryption == "aes256") && !config.password.empty();
+        const bool useEncryption =
+            (config.encryption == "aes256" || config.encryption == "3des") && !config.password.empty();
         bool copyOk = false;
         if (useEncryption) {
-            copyOk = writeEncryptedFile(absSrc, absDst, config.password, copyErr);
+            copyOk = writeEncryptedFile(absSrc, absDst, config.encryption, config.password, copyErr);
         } else {
             copyOk = FileCopier::copyFile(absSrc, absDst, &copyErr, cancel);
         }
@@ -600,6 +635,26 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
                 // 只有路径上仍是目录才删除整棵树；
                 // 目录->文件互换时该路径已是新文件，旧树在 stagedPaths 中另行清理。
                 FileSystem::removeAll(oldData);
+            }
+        }
+    }
+
+    // ---- 8.4 建立 data/ 中硬链接组的链接关系 ----
+    // 组内首个文件已在上面复制完成；非首个条目删除旧数据后用 CreateHardLink 指向首个，
+    // 保证同一物理文件只存一份。硬链接失败（FAT/跨卷）回退复制，保证内容正确。
+    for (const auto& e : manifest.entries) {
+        if (e.info.hardLinkTo.empty()) continue;
+        const std::wstring linkPath = dataDir + L"\\" + e.info.relativePath;
+        const std::wstring targetPath = dataDir + L"\\" + e.info.hardLinkTo;
+        if (FileSystem::exists(linkPath)) {
+            FileSystem::deleteFile(linkPath);
+        }
+        std::string hlErr;
+        if (!FileSystem::createHardLink(linkPath, targetPath, &hlErr)) {
+            std::string copyErr;
+            if (!FileCopier::copyFile(targetPath, linkPath, &copyErr, nullptr)) {
+                res.warnings.push_back(std::wstring(L"硬链接建立失败且回退复制失败: ") +
+                                       e.info.relativePath);
             }
         }
     }

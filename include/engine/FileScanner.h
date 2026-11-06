@@ -1,6 +1,7 @@
-// FileScanner.h - 目录扫描器
-// 职责：递归遍历目录树，为每个文件/目录生成 FileInfo（相对路径、大小、类型、时间）。
-//       单个条目失败时记录错误并继续，不中断整个扫描。
+// FileScanner.h - 目录扫描器（文件遍历接口）
+// 职责：以先序遍历（preorder）递归遍历目录树，为每个文件/目录生成"文件头"
+//       （FileInfo struct，对应 Unix inode：类型/权限/大小/时间/inode号/硬链接计数）。
+//       目录项通过 Name->文件头 映射逐级定位，单个条目失败时记录错误并继续。
 // 不负责：备份、压缩、加密、GUI（需求文档 6.2 职责边界）。
 #pragma once
 
@@ -19,9 +20,10 @@ public:
     // 取消检查：返回 true 表示应中止扫描。
     using CancelCheck = std::function<bool()>;
 
-    // 扫描 root，输出全部条目（含目录）并按相对路径排序。
+    // 以先序遍历扫描 root，输出全部条目（含目录，父条目先于子目录树），
+    // 并附带硬链接标记（同一 inode 的非首个条目 hardLinkTo 指向首个）。
     // 根目录不存在/不是目录时返回 false 并写入 outErrors。
-    // outWarnings 可选：记录非致命警告（如跳过符号链接/联接点）。
+    // outWarnings 可选：记录非致命警告（如包含符号链接/联接点）。
     static bool scan(const std::wstring& root,
                      std::vector<FileInfo>& outFiles,
                      std::vector<std::wstring>& outErrors,

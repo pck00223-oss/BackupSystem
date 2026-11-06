@@ -11,7 +11,9 @@
 #include "business/VerifyManager.h"
 #include "app/TaskScheduler.h"
 #include "core/BackupLock.h"
-#include "core/AesEncryptor.h"
+#include "core/AesCipher.h"
+#include "core/TripleDesCipher.h"
+#include "core/IEncryptionAlgorithm.h"
 #include "core/HashCalculator.h"
 #include "core/TimeUtil.h"
 #include "engine/FileScanner.h"
@@ -861,21 +863,25 @@ TEST(Encryption, BackupRestore_Aes256) {
     EXPECT_TRUE(manifest.loadFromFile(tgt + L"\\manifest.txt", &loadErr));
     EXPECT_TRUE(manifest.meta.encryption == "aes256");
 
-    // 无密码恢复应失败
+    // 无密码恢复：前置校验快速失败（不解密任何文件，failed=0，有错误消息）
     RestoreConfig rcfg;
     rcfg.backupRoot = tgt;
     rcfg.restorePath = tgt + L"\\restore_nopass";
     rcfg.overwrite = true;
     RestoreResult r2 = RestoreManager::run(rcfg);
     EXPECT_TRUE(!r2.success);
-    EXPECT_TRUE(r2.failed == 3);
+    EXPECT_TRUE(r2.failed == 0);
+    EXPECT_TRUE(r2.restored == 0);
+    EXPECT_FALSE(r2.errors.empty());
 
-    // 错误密码恢复应失败
+    // 错误密码恢复：同样前置校验快速失败
     rcfg.restorePath = tgt + L"\\restore_wrong";
     rcfg.password = "wrongpassword";
     RestoreResult r3 = RestoreManager::run(rcfg);
     EXPECT_TRUE(!r3.success);
-    EXPECT_TRUE(r3.failed == 3);
+    EXPECT_TRUE(r3.failed == 0);
+    EXPECT_TRUE(r3.restored == 0);
+    EXPECT_FALSE(r3.errors.empty());
 
     // 正确密码恢复应成功
     rcfg.restorePath = tgt + L"\\restore_ok";
@@ -895,7 +901,7 @@ TEST(Encryption, BackupRestore_Aes256) {
 }
 
 // NIST AES-256 标准向量测试（FIPS-197 / SP 800-38A）
-// 验证自实现 AES 的正确性，而不仅是"自己解自己"。
+// 验证 BCrypt(CNG) 输出与 NIST 标准向量一致，而不仅是"自己解自己"。
 // 用全零 IV 时，CBC 第一块 = ECB 加密结果。
 TEST(Aes, NistVector_Aes256_EcbBlock) {
     // NIST AES-256 ECB 测试向量
@@ -912,7 +918,7 @@ TEST(Aes, NistVector_Aes256_EcbBlock) {
     };
     const uint8_t zeroIv[16] = {0};
 
-    AesEncryptor aes(key, 32);
+    AesCipher aes(key, 32);
     // 16 字节明文会被 PKCS7 填充到 32 字节，输出 IV(16) + 密文(32) = 48 字节
     std::vector<uint8_t> result = aes.encryptWithIV(plaintext, 16, zeroIv);
     EXPECT_TRUE(result.size() == 48);
@@ -1042,6 +1048,57 @@ TEST(Encryption, LargeFileStreaming_RoundTrip) {
     std::string restored = testutil::readFile(rcfg.restorePath + L"\\big.bin");
     EXPECT_EQ(restored.size(), big.size());
     EXPECT_TRUE(restored == big);
+
+    testutil::removeAll(src);
+    testutil::removeAll(tgt);
+}
+
+// 3DES-CBC 端到端：第二种加密算法的备份/恢复集成测试（块8，密钥24）
+TEST(Encryption, TripleDes_BackupRestore_RoundTrip) {
+    const std::wstring src = testutil::makeTempDir(L"tdes_src");
+    const std::wstring tgt = testutil::makeTempDir(L"tdes_tgt");
+    testutil::writeFile(src + L"a.txt", "3des plaintext data");
+    testutil::writeFile(src + L"b.txt", std::string(50, 'z'));  // 跨 8 字节块
+    testutil::writeFile(src + L"empty.txt", "");
+
+    BackupConfig cfg;
+    cfg.sourcePath = src;
+    cfg.targetPath = tgt;
+    cfg.mode = BackupMode::Full;
+    cfg.encryption = "3des";
+    cfg.password = "tdes-password";
+
+    BackupResult r1 = BackupManager::run(cfg);
+    EXPECT_TRUE(r1.success);
+    EXPECT_TRUE(r1.backedUp == 3);
+
+    Manifest manifest;
+    EXPECT_TRUE(manifest.loadFromFile(tgt + L"\\manifest.txt"));
+    EXPECT_TRUE(manifest.meta.encryption == "3des");
+
+    // verify 应通过（密文大小/Hash 校验对 3DES 同样生效）
+    VerifyResult vr = VerifyManager::run(tgt);
+    EXPECT_TRUE(vr.success);
+    EXPECT_TRUE(vr.passed == 3);
+
+    // 错误密码：前置校验快速失败
+    RestoreConfig rcfg;
+    rcfg.backupRoot = tgt;
+    rcfg.restorePath = tgt + L"\\restore_wrong";
+    rcfg.password = "bad";
+    RestoreResult rw = RestoreManager::run(rcfg);
+    EXPECT_TRUE(!rw.success);
+    EXPECT_TRUE(rw.failed == 0);
+    EXPECT_FALSE(rw.errors.empty());
+
+    // 正确密码恢复
+    rcfg.restorePath = tgt + L"\\restore_ok";
+    rcfg.password = "tdes-password";
+    RestoreResult rr = RestoreManager::run(rcfg);
+    EXPECT_TRUE(rr.success);
+    EXPECT_TRUE(rr.restored == 3);
+    EXPECT_TRUE(testutil::readFile(rcfg.restorePath + L"\\a.txt") == "3des plaintext data");
+    EXPECT_TRUE(testutil::readFile(rcfg.restorePath + L"\\empty.txt") == "");
 
     testutil::removeAll(src);
     testutil::removeAll(tgt);

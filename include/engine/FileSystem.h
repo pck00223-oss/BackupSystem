@@ -62,8 +62,28 @@ public:
     static bool listDirectory(const std::wstring& dirPath,
                               std::vector<std::pair<std::wstring, FileType>>& out);
 
-    // 获取文件信息（大小、类型、时间）。路径不存在返回 false。
+    // 获取文件信息（大小、类型、时间、文件 ID）。路径不存在返回 false。
     static bool getFileInfo(const std::wstring& path, FileInfo& out);
+
+    // ---- 硬链接（对应 Unix link / hard link）----
+    // 创建硬链接：linkPath 指向 existingPath（同一物理文件，链接计数 +1）。
+    // 必须在同一卷上。Windows 封装 CreateHardLinkW。
+    static bool createHardLink(const std::wstring& linkPath,
+                               const std::wstring& existingPath,
+                               std::string* err = nullptr);
+
+    // ---- 符号链接（对应 Unix symlink / readlink）----
+    // 读取符号链接/联接点的目标路径（不跟随链接）。封装 FSCTL_GET_REPARSE_POINT。
+    // 支持 IO_REPARSE_TAG_SYMLINK（符号链接）与 IO_REPARSE_TAG_MOUNT_POINT（junction）。
+    static bool readSymlinkTarget(const std::wstring& linkPath,
+                                  std::wstring& target,
+                                  std::string*err = nullptr);
+    // 创建符号链接：linkPath -> targetPath。targetIsDir=true 目标为目录，false 为文件。
+    // 封装 CreateSymbolicLinkW（需要开发者模式或管理员权限）。
+    static bool createSymlink(const std::wstring& linkPath,
+                              const std::wstring& targetPath,
+                              bool targetIsDir,
+                              std::string* err = nullptr);
 
     // 打开文件：读取（共享读/写/删除，允许处理被占用的文件）。
     static FileHandle openRead(const std::wstring& path, std::string* err = nullptr);

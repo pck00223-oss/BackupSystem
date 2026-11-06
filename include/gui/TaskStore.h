@@ -18,7 +18,7 @@ struct BackupTask {
     std::wstring sourcePath;     // 源目录
     std::wstring targetPath;     // 备份根目录
     BackupMode mode = BackupMode::Full;
-    std::string encryption;      // "none" / "aes256"
+    std::string encryption;      // "none" / "aes256" / "3des"
     std::string password;        // 加密密码（encryption != "none" 时需要，内存中为明文 UTF-8）
     int keepSnapshots = 0;       // 保留快照数
 

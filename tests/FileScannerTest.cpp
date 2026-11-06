@@ -58,11 +58,11 @@ TEST(FileScanner, CancelStopsEarly) {
     EXPECT_TRUE(files.empty());
 }
 
-TEST(FileScanner, SymlinkIsSkippedWithWarning) {
+TEST(FileScanner, SymlinkIsRecordedWithWarning) {
     testenv::TempDir dir(L"scanner_link");
     testutil::writeFile(dir.file(L"target.txt"), "t");
     const std::wstring link = dir.file(L"link.txt");
-    if (!::CreateSymbolicLinkW(link.c_str(), dir.file(L"target.txt").c_str(), 0)) {
+    if (!::CreateSymbolicLinkW(link.c_str(), L"target.txt", 0)) {
         GTEST_SKIP() << "cannot create symlink (需要开发者模式或管理员权限)";
     }
 
@@ -70,8 +70,15 @@ TEST(FileScanner, SymlinkIsSkippedWithWarning) {
     std::vector<std::wstring> errors;
     std::vector<std::wstring> warnings;
     ASSERT_TRUE(FileScanner::scan(dir.path(), files, errors, nullptr, nullptr, &warnings));
+    // 新行为：符号链接被记录进遍历结果（不再跳过），并有警告提示
     EXPECT_FALSE(warnings.empty());
+    bool foundLink = false;
     for (const auto& f : files) {
-        EXPECT_NE(f.relativePath, std::wstring(L"link.txt"));
+        if (f.relativePath == L"link.txt") {
+            foundLink = true;
+            EXPECT_EQ(f.type, FileType::Symlink);
+            EXPECT_EQ(f.symlinkTarget, std::wstring(L"target.txt"));
+        }
     }
+    EXPECT_TRUE(foundLink) << "符号链接应被记录";
 }

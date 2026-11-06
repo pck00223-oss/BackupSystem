@@ -1,0 +1,25 @@
+sequenceDiagram
+    autonumber
+    participant GUI as backupgui / backupapp
+    participant BM as BackupManager
+    participant CFG as ConfigManager
+    participant SC as FileScanner
+    participant FS as FileSystem
+    participant TAR as TarPacker (ustar 手工实现)
+
+    GUI->>BM: doBackup(source, target, mode)
+    BM->>CFG: getConfig()
+    CFG-->>BM: 返回配置（快照数/加密/过滤器）
+    BM->>SC: enumerateFiles(source)
+    SC->>FS: 逐条目读取文件头 struct FileInfo
+    FS-->>SC: fileIndex / linkCount / symlinkTarget / mode
+    SC-->>BM: 先序遍历结果（文件/目录/硬链接/符号链接）
+    Note over BM: 建立 (volumeSerial,fileIndex) → 首个路径映射
+    alt 演示打包（pack 子命令）
+        BM->>TAR: packDirectory(source, out.tar)
+        Note over TAR: REGULAR 写数据<br/>HARDLINK 指向首个条目<br/>SYMLINK 记录 linkname
+        TAR-->>BM: 512 字节块交替写出，末尾两个全零块
+    else 常规备份
+        BM->>BM: 增量比较 + 复制 data/ + 统一重建硬链接
+    end
+    BM-->>GUI: 返回备份结果（BackupResult，含硬链接/符号链接条目）

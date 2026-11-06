@@ -43,12 +43,23 @@ std::vector<ChangeRecord> FileComparator::compare(const std::vector<FileInfo>& c
             rec.change = FileChangeType::Added;
         } else {
             const Manifest::Entry& old = *it->second;
-            if (fi.type == FileType::Directory) {
+            if (fi.type == FileType::Symlink) {
+                if (old.info.type == FileType::Symlink) {
+                    // 前后都是符号链接：比较目标路径，目标相同则未变化，不同则修改
+                    rec.change = (fi.symlinkTarget == old.info.symlinkTarget)
+                                     ? FileChangeType::Unchanged
+                                     : FileChangeType::Modified;
+                } else {
+                    // 文件/目录 -> 符号链接：当前链接重新入库，旧对象删除
+                    rec.change = FileChangeType::Added;
+                    pushDeleted(result, *it->second);
+                }
+            } else if (fi.type == FileType::Directory) {
                 if (old.info.type == FileType::Directory) {
                     // 目录前后都是目录 -> 未变化
                     rec.change = FileChangeType::Unchanged;
                 } else {
-                    // 文件 -> 目录：当前目录重新入库，旧文件删除
+                    // 文件/符号链接 -> 目录：当前目录重新入库，旧文件删除
                     rec.change = FileChangeType::Added;
                     pushDeleted(result, *it->second);
                 }

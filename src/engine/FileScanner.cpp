@@ -23,14 +23,13 @@ bool FileScanner::scan(const std::wstring& root,
         return false;
     }
 
+    // 先序遍历（preorder）：先访问当前目录的条目，再逐级深入子目录。
+    // 对应课程《文件系统》路径遍历图：从根 inode 的目录块出发，
+    // 按 Name->inode 映射逐级定位（/ -> a -> b -> c.c）。
     scanRecursive(root, L"", outFiles, outErrors, cancel, progress, outWarnings);
 
-    // 按相对路径排序（大小写不敏感，与 Windows 文件系统行为一致）。
-    // 注：若课程要求自行实现排序算法，可替换为归并/快排实现（见需求文档 11 节）。
-    std::sort(outFiles.begin(), outFiles.end(),
-              [](const FileInfo& a, const FileInfo& b) {
-                  return wcsicmpSafe(a.relativePath, b.relativePath) < 0;
-              });
+    // 输出保持先序遍历结构（父条目必在子目录树之前）。
+    // 每个目录内的兄弟条目已在 scanRecursive 中按名称排序，保证确定性。
     return true;
 }
 
@@ -49,12 +48,21 @@ void FileScanner::scanRecursive(const std::wstring& absRoot,
         return;
     }
 
+    // 目录内条目按名称排序（大小写不敏感），保证先序输出确定性。
+    std::sort(entries.begin(), entries.end(),
+              [](const std::pair<std::wstring, FileType>& a,
+                 const std::pair<std::wstring, FileType>& b) {
+                  return wcsicmpSafe(a.first, b.first) < 0;
+              });
+
+    // ---- 先序遍历核心：当前条目先入队，目录条目立即递归子树 ----
     for (const auto& entry : entries) {
         if (cancel && cancel()) return;
         const std::wstring rel = relDir.empty() ? entry.first : relDir + L"\\" + entry.first;
         const std::wstring abs = absRoot + L"\\" + rel;
         if (progress) progress(rel);
 
+        // 读取该条目的"文件头"（对应 inode：类型/大小/时间/inode号/硬链接计数）
         FileInfo info;
         info.relativePath = rel;
         info.name = entry.first;
@@ -63,12 +71,18 @@ void FileScanner::scanRecursive(const std::wstring& absRoot,
             errors.push_back(std::wstring(L"无法获取文件信息: ") + abs);
             continue;
         }
-        // 默认跳过 reparse point（junction/目录符号链接），防止递归成环或越界备份。
-        // 记录为 warning，避免静默排除导致用户以为备份完整。
         if (info.type == FileType::Symlink) {
-            if (warnings) warnings->push_back(std::wstring(L"跳过符号链接/联接点: ") + rel);
+            // 符号链接：备份链接本身（读取目标路径），不跟随、不递归，防止成环或越界。
+            // 对应 Unix symlink（TAR typeflag='2'）。读取失败也记录该链接，目标留空。
+            std::wstring target;
+            if (FileSystem::readSymlinkTarget(abs, target)) {
+                info.symlinkTarget = target;
+            }
+            if (warnings) warnings->push_back(std::wstring(L"包含符号链接: ") + rel);
+            out.push_back(info);
             continue;
         }
+        // 先序：父条目先于子目录树
         out.push_back(info);
 
         if (info.type == FileType::Directory) {

@@ -1,9 +1,53 @@
 // FileSystem.cpp - Windows 文件系统操作实现
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0600  // 启用 Vista+ API
+#endif
+
 #include "engine/FileSystem.h"
 
 #include <cwctype>
+#include <vector>
+
+#include <winioctl.h>
 
 #include "core/Utf.h"
+
+namespace backup {
+
+namespace {
+
+// 与 Windows REPARSE_DATA_BUFFER 布局等价的本地结构。
+// 不用系统宏 REPARSE_DATA_BUFFER（MinGW 下受 _WIN32_WINNT 条件影响不稳定），
+// 按微软公开文档手工定义，保证在所有工具链下布局一致。
+struct ReparseDataBuffer {
+    ULONG ReparseTag;
+    USHORT ReparseDataLength;
+    USHORT Reserved;
+    union {
+        struct {
+            USHORT SubstituteNameOffset;
+            USHORT SubstituteNameLength;
+            USHORT PrintNameOffset;
+            USHORT PrintNameLength;
+            ULONG Flags;
+            WCHAR PathBuffer[1];
+        } Symlink;
+        struct {
+            USHORT SubstituteNameOffset;
+            USHORT SubstituteNameLength;
+            USHORT PrintNameOffset;
+            USHORT PrintNameLength;
+            WCHAR PathBuffer[1];
+        } MountPoint;
+        struct {
+            UCHAR DataBuffer[1];
+        } Generic;
+    };
+};
+static_assert(sizeof(ReparseDataBuffer) == 24, "reparse buffer header layout");
+
+}  // namespace
+}  // namespace backup
 
 namespace backup {
 
@@ -116,23 +160,130 @@ bool FileSystem::listDirectory(const std::wstring& dirPath,
 
 bool FileSystem::getFileInfo(const std::wstring& path, FileInfo& out) {
     const std::wstring lp = toLongPath(path);
-    WIN32_FIND_DATAW fd;
-    HANDLE h = ::FindFirstFileW(lp.c_str(), &fd);
+    // 打开文件/目录本身（不跟随符号链接：FILE_FLAG_OPEN_REPARSE_POINT）。
+    // FILE_FLAG_BACKUP_SEMANTICS 允许打开目录。
+    HANDLE h = ::CreateFileW(lp.c_str(), FILE_READ_ATTRIBUTES,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             nullptr, OPEN_EXISTING,
+                             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                             nullptr);
     if (h == INVALID_HANDLE_VALUE) return false;
-    ::FindClose(h);
 
-    out.name = fd.cFileName;
-    out.size = (static_cast<uint64_t>(fd.nFileSizeHigh) << 32) | fd.nFileSizeLow;
-    out.createdTime = filetimeToUnixSeconds(fd.ftCreationTime);
-    out.modifiedTime = filetimeToUnixSeconds(fd.ftLastWriteTime);
-    // 100ns 精度修改时间（FILETIME 本身就是 100ns 单位，从 1601 年起）
+    BY_HANDLE_FILE_INFORMATION bhi;
+    BOOL ok = ::GetFileInformationByHandle(h, &bhi);
+    ::CloseHandle(h);
+    if (!ok) return false;
+
+    out.name = path;
+    const size_t slash = path.find_last_of(L"\\/");
+    if (slash != std::wstring::npos) out.name = path.substr(slash + 1);
+    out.size = (static_cast<uint64_t>(bhi.nFileSizeHigh) << 32) | bhi.nFileSizeLow;
+    out.createdTime = filetimeToUnixSeconds(bhi.ftCreationTime);
+    out.modifiedTime = filetimeToUnixSeconds(bhi.ftLastWriteTime);
     {
         ULARGE_INTEGER ul;
-        ul.LowPart = fd.ftLastWriteTime.dwLowDateTime;
-        ul.HighPart = fd.ftLastWriteTime.dwHighDateTime;
+        ul.LowPart = bhi.ftLastWriteTime.dwLowDateTime;
+        ul.HighPart = bhi.ftLastWriteTime.dwHighDateTime;
         out.modifiedTime100ns = ul.QuadPart;
     }
-    out.type = attributesToType(fd.dwFileAttributes);
+    out.type = attributesToType(bhi.dwFileAttributes);
+    // 硬链接识别：卷序列号 + 文件索引（对应 Unix 的设备号 + inode 号）
+    out.volumeSerial = bhi.dwVolumeSerialNumber;
+    out.fileIndex = (static_cast<uint64_t>(bhi.nFileIndexHigh) << 32) | bhi.nFileIndexLow;
+    // 硬链接计数（ls -li 第三列，对应 inode 的 nlink）
+    out.linkCount = bhi.nNumberOfLinks;
+    // 权限（Windows 无 Unix 权限位，简化映射：目录 0755，文件 0644）
+    out.mode = (out.type == FileType::Directory) ? 0755 : 0644;
+    return true;
+}
+
+bool FileSystem::createHardLink(const std::wstring& linkPath,
+                                const std::wstring& existingPath,
+                                std::string* err) {
+    if (!::CreateHardLinkW(toLongPath(linkPath).c_str(),
+                           toLongPath(existingPath).c_str(), nullptr)) {
+        if (err) *err = "CreateHardLinkW failed, error=" + std::to_string(::GetLastError());
+        return false;
+    }
+    return true;
+}
+
+bool FileSystem::readSymlinkTarget(const std::wstring& linkPath,
+                                   std::wstring& target,
+                                   std::string* err) {
+    const std::wstring lp = toLongPath(linkPath);
+    HANDLE h = ::CreateFileW(lp.c_str(), 0,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             nullptr, OPEN_EXISTING,
+                             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                             nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        if (err) *err = "open reparse point failed, error=" + std::to_string(::GetLastError());
+        return false;
+    }
+
+    // REPARSE_DATA_BUFFER 是变长结构，分配足够大的缓冲区。
+    constexpr DWORD kBufSize = 16 * 1024;
+    std::vector<uint8_t> buffer(kBufSize, 0);
+    DWORD bytesReturned = 0;
+    BOOL ok = ::DeviceIoControl(h, FSCTL_GET_REPARSE_POINT, nullptr, 0,
+                                buffer.data(), kBufSize, &bytesReturned, nullptr);
+    ::CloseHandle(h);
+    if (!ok) {
+        if (err) *err = "FSCTL_GET_REPARSE_POINT failed, error=" + std::to_string(::GetLastError());
+        return false;
+    }
+
+    // 解析 REPARSE_DATA_BUFFER（自定义布局，见文件头 ReparseDataBuffer）。
+    auto* rdb = reinterpret_cast<ReparseDataBuffer*>(buffer.data());
+    auto readName = [](const wchar_t* p, USHORT lenBytes) -> std::wstring {
+        // 长度字段是字节数，路径可能以 \??\ 开头，需要去掉。
+        if (p == nullptr || lenBytes < 2) return std::wstring();
+        std::wstring s(p, lenBytes / sizeof(wchar_t));
+        if (s.compare(0, 4, L"\\??\\") == 0) s = s.substr(4);
+        if (s.compare(0, 4, L"\\\\?\\") == 0) s = s.substr(4);
+        return s;
+    };
+
+    if (rdb->ReparseTag == IO_REPARSE_TAG_SYMLINK) {
+        const auto& d = rdb->Symlink;
+        const auto* base = reinterpret_cast<const wchar_t*>(d.PathBuffer);
+        // 优先用 PrintName（人类可读），为空则用 SubstituteName。
+        target = readName(base + d.PrintNameOffset / sizeof(wchar_t), d.PrintNameLength);
+        if (target.empty()) {
+            target = readName(base + d.SubstituteNameOffset / sizeof(wchar_t),
+                              d.SubstituteNameLength);
+        }
+        return true;
+    }
+    if (rdb->ReparseTag == IO_REPARSE_TAG_MOUNT_POINT) {
+        const auto& d = rdb->MountPoint;
+        const auto* base = reinterpret_cast<const wchar_t*>(d.PathBuffer);
+        target = readName(base + d.SubstituteNameOffset / sizeof(wchar_t),
+                          d.SubstituteNameLength);
+        return true;
+    }
+    if (err) *err = "unknown reparse tag=" + std::to_string(rdb->ReparseTag);
+    return false;
+}
+
+bool FileSystem::createSymlink(const std::wstring& linkPath,
+                               const std::wstring& targetPath,
+                               bool targetIsDir,
+                               std::string* err) {
+    DWORD flags = targetIsDir ? SYMBOLIC_LINK_FLAG_DIRECTORY : 0;
+    // SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE 支持开发者模式下免管理员创建。
+    flags |= SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
+    if (!::CreateSymbolicLinkW(toLongPath(linkPath).c_str(),
+                               targetPath.c_str(), flags)) {
+        // 回退：不带 ALLOW_UNPRIVILEGED_CREATE 再试一次（旧系统）。
+        flags = targetIsDir ? SYMBOLIC_LINK_FLAG_DIRECTORY : 0;
+        if (!::CreateSymbolicLinkW(toLongPath(linkPath).c_str(),
+                                   targetPath.c_str(), flags)) {
+            if (err) *err = "CreateSymbolicLinkW failed, error=" + std::to_string(::GetLastError());
+            return false;
+        }
+    }
     return true;
 }
 

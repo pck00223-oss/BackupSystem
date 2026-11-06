@@ -1,6 +1,7 @@
 // main.cpp - 命令行入口（应用层演示）
-// 提供 backup / restore / verify / history / schedule 子命令。
+// 提供 backup / restore / verify / history / schedule / pack / unpack 子命令。
 // schedule 子命令将备份注册为 Windows 计划任务，到点自动执行后退出，无需程序常驻。
+// pack/unpack 子命令使用自实现的 ustar TAR 打包接口（支持硬链接/符号链接）。
 #include <windows.h>
 
 #include <algorithm>
@@ -24,6 +25,7 @@
 #include "core/TimeUtil.h"
 #include "core/Utf.h"
 #include "engine/FileSystem.h"
+#include "engine/TarPacker.h"
 
 using namespace backup;
 
@@ -87,7 +89,7 @@ void printHelp() {
         "      --include-ext .cpp,.h     仅备份这些扩展名\n"
         "      --exclude-ext .tmp,.log   排除这些扩展名\n"
         "      --keep-snapshots N        保留最近 N 份完整快照（0=不保留，默认0）\n"
-        "      --encrypt aes256           AES-256-CBC 加密备份数据（需配合 --password）\n"
+        "      --encrypt aes256|3des     加密备份数据（AES-256-CBC 或 3DES-CBC，需配合 --password）\n"
         "      --password <pwd>           加密/解密密码\n"
         "      --schedule HH:MM          程序常驻定时备份（不推荐长期自用）\n"
         "      --config <file>           配置文件（默认 config/default.conf）\n"
@@ -103,6 +105,10 @@ void printHelp() {
         "      注册为 Windows 计划任务，到点自动备份后退出（推荐长期自用）\n"
         "  backupapp schedule --unregister [--name <task>]\n"
         "  backupapp schedule --status [--name <task>]\n"
+        "  backupapp pack    --source <dir> --output <file.tar>   打包目录为 ustar TAR\n"
+        "      （自动处理硬链接：同一 inode 多目录项只存一份；符号链接记录目标）\n"
+        "  backupapp unpack  --input <file.tar> --output <dir>    解包 TAR 到目录\n"
+        "      （重建硬链接 CreateHardLink、符号链接 CreateSymbolicLink）\n"
         "  backupapp help\n";
 }
 
@@ -180,22 +186,25 @@ int cmdBackup(const std::vector<std::wstring>& args) {
         }
     }
 
-    // 加密：AES-256-CBC
+    // 加密：AES-256-CBC 或 3DES-CBC（均调用 Windows BCrypt 系统库）
     const std::wstring encryptArg = getArg(args, L"--encrypt");
     if (!encryptArg.empty()) {
         if (encryptArg == L"aes256") {
             config.encryption = "aes256";
+        } else if (encryptArg == L"3des") {
+            config.encryption = "3des";
         } else if (encryptArg == L"none") {
             config.encryption = "none";
         } else {
-            std::cout << "错误：--encrypt 仅支持 none|aes256，当前: " << wideToUtf8(encryptArg) << "\n";
+            std::cout << "错误：--encrypt 仅支持 none|aes256|3des，当前: " << wideToUtf8(encryptArg) << "\n";
             return 1;
         }
     }
     const std::wstring passArg = getArg(args, L"--password");
     if (!passArg.empty()) config.password = wideToUtf8(passArg);
-    if (config.encryption == "aes256" && config.password.empty()) {
-        std::cout << "错误：--encrypt aes256 需要同时指定 --password <密码>\n";
+    if ((config.encryption == "aes256" || config.encryption == "3des") &&
+        config.password.empty()) {
+        std::cout << "错误：--encrypt " << config.encryption << " 需要同时指定 --password <密码>\n";
         return 1;
     }
 
@@ -543,6 +552,60 @@ int cmdSchedule(const std::vector<std::wstring>& args) {
     return 1;
 }
 
+int cmdPack(const std::vector<std::wstring>& args) {
+    const std::wstring source = getArg(args, L"--source");
+    const std::wstring output = getArg(args, L"--output");
+    if (source.empty() || output.empty()) {
+        std::cout << "用法：backupapp pack --source <dir> --output <file.tar>\n";
+        return 1;
+    }
+    if (!FileSystem::isDirectory(source)) {
+        std::cout << "错误：源目录不存在或不是目录: " << wideToUtf8(source) << "\n";
+        return 1;
+    }
+    std::string err;
+    if (TarPacker::packDirectory(source, output, &err,
+                                 [](const std::wstring& p) {
+                                     std::cout << "  打包: " << wideToUtf8(p) << "\n";
+                                 })) {
+        std::cout << "打包完成: " << wideToUtf8(output) << "\n";
+        return 0;
+    }
+    std::cout << "打包失败: " << err << "\n";
+    return 1;
+}
+
+int cmdUnpack(const std::vector<std::wstring>& args) {
+    const std::wstring input = getArg(args, L"--input");
+    const std::wstring output = getArg(args, L"--output");
+    if (input.empty() || output.empty()) {
+        std::cout << "用法：backupapp unpack --input <file.tar> --output <dir>\n";
+        return 1;
+    }
+    if (!FileSystem::exists(input)) {
+        std::cout << "错误：TAR 文件不存在: " << wideToUtf8(input) << "\n";
+        return 1;
+    }
+    std::string err;
+    std::vector<std::wstring> entries;
+    if (TarPacker::listEntries(input, entries, &err)) {
+        std::cout << "归档条目 " << entries.size() << " 个:\n";
+        for (const auto& e : entries) std::cout << "  " << wideToUtf8(e) << "\n";
+    } else {
+        std::cout << "读取归档失败: " << err << "\n";
+        return 1;
+    }
+    if (TarPacker::extractTo(input, output, &err,
+                             [](const std::wstring& p) {
+                                 std::cout << "  解包: " << wideToUtf8(p) << "\n";
+                             })) {
+        std::cout << "解包完成: " << wideToUtf8(output) << "\n";
+        return 0;
+    }
+    std::cout << "解包失败: " << err << "\n";
+    return 1;
+}
+
 }  // namespace
 
 int main() {
@@ -566,6 +629,8 @@ int main() {
     if (args[0] == L"verify") return cmdVerify(args);
     if (args[0] == L"history") return cmdHistory(args);
     if (args[0] == L"schedule") return cmdSchedule(args);
+    if (args[0] == L"pack") return cmdPack(args);
+    if (args[0] == L"unpack") return cmdUnpack(args);
 
     std::cout << "未知命令: " << wideToUtf8(args[0]) << "\n";
     printHelp();
