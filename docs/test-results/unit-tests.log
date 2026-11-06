@@ -1,0 +1,629 @@
+BackupSystem 单元测试结果 - 2026-11-06 11:28:52
+Running main() from C:/Users/Administrator/program/BackupSystem/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 112 tests from 27 test suites.
+[----------] Global test environment set-up.
+[----------] 11 tests from Backup
+[ RUN      ] Backup.Full
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[       OK ] Backup.Full (14 ms)
+[ RUN      ] Backup.Incremental_NoChange
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=增量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=0 修改=0 删除=0 未变化=4
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 0 个文件, 0 字节, 失败 0
+[       OK ] Backup.Incremental_NoChange (8 ms)
+[ RUN      ] Backup.Incremental_AddModifyDelete
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=增量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=1 修改=1 删除=1 未变化=2
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 2 个文件, 24 字节, 失败 0
+[       OK ] Backup.Incremental_AddModifyDelete (11 ms)
+[ RUN      ] Backup.Incremental_DeleteOnly
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=增量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 6 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=0 修改=0 删除=1 未变化=3
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 0 个文件, 0 字节, 失败 0
+[       OK ] Backup.Incremental_DeleteOnly (8 ms)
+[ RUN      ] Backup.NonExistentSource
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [ERROR] [BackupManager] 源路径不存在: C:\Users\Administrator\AppData\Local\Temp\backup_test_src_14705816499170058599\\does_not_exist
+[       OK ] Backup.NonExistentSource (1 ms)
+[ RUN      ] Backup.Cancel
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 0 个条目
+[2026-11-06 11:28:52] [WARNING] [BackupManager] 备份被用户取消
+[       OK ] Backup.Cancel (6 ms)
+[ RUN      ] Backup.Filtered
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=2 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 2 个文件, 11 字节, 失败 0
+[       OK ] Backup.Filtered (5 ms)
+[ RUN      ] Backup.SourceEqualsTarget_Rejected
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [ERROR] [BackupManager] 目标路径不能等于或位于源目录内: C:\Users\Administrator\AppData\Local\Temp\backup_test_src_17403710047696834609\
+[       OK ] Backup.SourceEqualsTarget_Rejected (2 ms)
+[ RUN      ] Backup.SourceDotDotBypass_Rejected
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [ERROR] [BackupManager] 目标路径不能等于或位于源目录内: C:\Users\Administrator\AppData\Local\Temp\backup_test_src_5037873803695542245\docs\subx\..\sub\tgt
+[       OK ] Backup.SourceDotDotBypass_Rejected (2 ms)
+[ RUN      ] Backup.CancelPreservesOldManifest
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=增量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 9 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=2 修改=1 删除=0 未变化=3
+[2026-11-06 11:28:52] [ERROR] [BackupManager] 复制失败: new1.txt - cancelled
+[2026-11-06 11:28:52] [WARNING] [BackupManager] 备份被用户取消
+[2026-11-06 11:28:52] [ERROR] [BackupManager] 备份被取消，不覆盖旧 Manifest（保留上一次完整清单）
+[       OK ] Backup.CancelPreservesOldManifest (13 ms)
+[ RUN      ] Backup.Incremental_TypeChangeFileDir
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=增量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=2 修改=0 删除=1 未变化=3
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 2 个文件, 23 字节, 失败 0
+[2026-11-06 11:28:52] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:52] [INFO] [RestoreManager] Manifest 包含 8 个条目, 源=C:\Users\Administrator\AppData\Local\Temp\backup_test_src_5477037941989721613\
+[2026-11-06 11:28:52] [INFO] [RestoreManager] 恢复完成: 恢复 5 个文件, 跳过 0, 失败 0, 校验 5, 不一致 0
+[       OK ] Backup.Incremental_TypeChangeFileDir (22 ms)
+[----------] 11 tests from Backup (97 ms total)
+
+[----------] 2 tests from Restore
+[ RUN      ] Restore.FullRoundTrip
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:52] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:52] [INFO] [RestoreManager] Manifest 包含 7 个条目, 源=C:\Users\Administrator\AppData\Local\Temp\backup_test_src_14495085642466120939\
+[2026-11-06 11:28:52] [INFO] [RestoreManager] 恢复完成: 恢复 4 个文件, 跳过 0, 失败 0, 校验 4, 不一致 0
+[       OK ] Restore.FullRoundTrip (14 ms)
+[ RUN      ] Restore.ConflictPolicy
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:52] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:52] [INFO] [RestoreManager] Manifest 包含 7 个条目, 源=C:\Users\Administrator\AppData\Local\Temp\backup_test_src_7683957869635070698\
+[2026-11-06 11:28:52] [INFO] [RestoreManager] 恢复完成: 恢复 3 个文件, 跳过 1, 失败 0, 校验 3, 不一致 0
+[2026-11-06 11:28:52] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:52] [INFO] [RestoreManager] Manifest 包含 7 个条目, 源=C:\Users\Administrator\AppData\Local\Temp\backup_test_src_7683957869635070698\
+[2026-11-06 11:28:52] [INFO] [RestoreManager] 恢复完成: 恢复 1 个文件, 跳过 3, 失败 0, 校验 1, 不一致 0
+[       OK ] Restore.ConflictPolicy (15 ms)
+[----------] 2 tests from Restore (30 ms total)
+
+[----------] 6 tests from Verify
+[ RUN      ] Verify.HealthyBackup
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[       OK ] Verify.HealthyBackup (9 ms)
+[ RUN      ] Verify.MissingFile
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[       OK ] Verify.MissingFile (9 ms)
+[ RUN      ] Verify.CorruptedFile
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[       OK ] Verify.CorruptedFile (9 ms)
+[ RUN      ] Verify.Snapshot_CorruptionDetected
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 已创建快照 20261106-112852
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1024 字节, 失败 0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=增量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=0 修改=1 删除=0 未变化=3
+[2026-11-06 11:28:52] [INFO] [BackupManager] 已创建快照 20261106-112852-1
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 1 个文件, 2 字节, 失败 0
+[       OK ] Verify.Snapshot_CorruptionDetected (21 ms)
+[ RUN      ] Verify.Repair_CorruptedFile_RebuiltFromSource
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=5 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 5 个文件, 1050 字节, 失败 0
+[       OK ] Verify.Repair_CorruptedFile_RebuiltFromSource (17 ms)
+[ RUN      ] Verify.CancelCheck_Aborts
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[       OK ] Verify.CancelCheck_Aborts (7 ms)
+[----------] 6 tests from Verify (76 ms total)
+
+[----------] 2 tests from Scheduler
+[ RUN      ] Scheduler.StopStart_RunNowSucceeds
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[       OK ] Scheduler.StopStart_RunNowSucceeds (8 ms)
+[ RUN      ] Scheduler.MissedTime_RunsOnce
+[2026-11-06 11:28:52] [INFO] [TaskScheduler] 定时触发任务: test @ 11:28
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份开始, id=20261106-112852, mode=全量
+[2026-11-06 11:28:52] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:52] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:52] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[       OK ] Scheduler.MissedTime_RunsOnce (2137 ms)
+[----------] 2 tests from Scheduler (2145 ms total)
+
+[----------] 6 tests from CrashRecovery
+[ RUN      ] CrashRecovery.LegalBaktmpFile_NotDeleted
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=5 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 5 个文件, 1054 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=0 删除=0 未变化=5
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 0 个文件, 0 字节, 失败 0
+[       OK ] CrashRecovery.LegalBaktmpFile_NotDeleted (17 ms)
+[ RUN      ] CrashRecovery.OldResidual_Restored
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [WARNING] [BackupManager] 崩溃恢复: 还原未提交的旧数据 a.txt.baktmp.old -> a.txt
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=0 删除=0 未变化=4
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 0 个文件, 0 字节, 失败 0
+[       OK ] CrashRecovery.OldResidual_Restored (9 ms)
+[ RUN      ] CrashRecovery.OldResidual_Committed_Cleaned
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [WARNING] [BackupManager] 崩溃恢复: 清理已提交的旧数据 a.txt.baktmp.old
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=0 删除=0 未变化=4
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 0 个文件, 0 字节, 失败 0
+[       OK ] CrashRecovery.OldResidual_Committed_Cleaned (10 ms)
+[ RUN      ] CrashRecovery.TempResidual_Detected_And_Cleaned
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [WARNING] [BackupManager] 崩溃恢复: 清理未完成临时文件 a.txt.baktmp
+[2026-11-06 11:28:55] [WARNING] [BackupManager] 崩溃恢复: 清理未完成临时文件 b.txt.baktmp.12345.0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=0 删除=0 未变化=4
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 0 个文件, 0 字节, 失败 0
+[       OK ] CrashRecovery.TempResidual_Detected_And_Cleaned (13 ms)
+[ RUN      ] CrashRecovery.NoManifest_NoAutoDelete
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [WARNING] [BackupManager] 崩溃恢复: 无法读取 Manifest，跳过自动清理（请先运行 verify 确认备份状态）
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [WARNING] [BackupManager] 崩溃恢复: 清理未完成临时文件 a.txt.baktmp
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=0 删除=0 未变化=4
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 0 个文件, 0 字节, 失败 0
+[       OK ] CrashRecovery.NoManifest_NoAutoDelete (15 ms)
+[ RUN      ] CrashRecovery.LegalBaktmpOldFile_NotDeleted
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=5 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 5 个文件, 1078 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=0 删除=0 未变化=5
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 0 个文件, 0 字节, 失败 0
+[       OK ] CrashRecovery.LegalBaktmpOldFile_NotDeleted (16 ms)
+[----------] 6 tests from CrashRecovery (83 ms total)
+
+[----------] 4 tests from FileCopier
+[ RUN      ] FileCopier.TempFile_NoCollision_WithLegalFile
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=5 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 5 个文件, 1051 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=1 删除=0 未变化=4
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 1 个文件, 16 字节, 失败 0
+[       OK ] FileCopier.TempFile_NoCollision_WithLegalFile (17 ms)
+[ RUN      ] FileCopier.CopiesAndOverwrites
+[       OK ] FileCopier.CopiesAndOverwrites (2 ms)
+[ RUN      ] FileCopier.MissingSourceFails
+[       OK ] FileCopier.MissingSourceFails (0 ms)
+[ RUN      ] FileCopier.CancelLeavesNoDestination
+[       OK ] FileCopier.CancelLeavesNoDestination (0 ms)
+[----------] 4 tests from FileCopier (22 ms total)
+
+[----------] 3 tests from Snapshot
+[ RUN      ] Snapshot.KeepNAndRestoreFromSnapshot
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=5 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 已创建快照 20261106-112855
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 5 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=1 删除=0 未变化=4
+[2026-11-06 11:28:55] [INFO] [BackupManager] 已创建快照 20261106-112855-1
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 1 个文件, 2 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=1 删除=0 未变化=4
+[2026-11-06 11:28:55] [INFO] [BackupManager] 已创建快照 20261106-112855-2，清理旧快照 1 份
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 1 个文件, 2 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 从快照恢复: 20261106-112855-1
+[2026-11-06 11:28:55] [INFO] [RestoreManager] Manifest 包含 8 个条目, 源=C:\Users\Administrator\AppData\Local\Temp\backup_test_src_14099482620488354774\
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复完成: 恢复 5 个文件, 跳过 0, 失败 0, 校验 5, 不一致 0
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:55] [INFO] [RestoreManager] Manifest 包含 8 个条目, 源=C:\Users\Administrator\AppData\Local\Temp\backup_test_src_14099482620488354774\
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复完成: 恢复 5 个文件, 跳过 0, 失败 0, 校验 5, 不一致 0
+[       OK ] Snapshot.KeepNAndRestoreFromSnapshot (35 ms)
+[ RUN      ] Snapshot.Disabled_NoSnapshotsDir
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1024 字节, 失败 0
+[       OK ] Snapshot.Disabled_NoSnapshotsDir (8 ms)
+[ RUN      ] Snapshot.DeletedFile_NotInNewSnapshotData
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 8 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=5 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 已创建快照 20261106-112855
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 5 个文件, 1024 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=0 删除=1 未变化=4
+[2026-11-06 11:28:55] [INFO] [BackupManager] 已创建快照 20261106-112855-1
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 0 个文件, 0 字节, 失败 0
+[       OK ] Snapshot.DeletedFile_NotInNewSnapshotData (16 ms)
+[----------] 3 tests from Snapshot (60 ms total)
+
+[----------] 6 tests from Encryption
+[ RUN      ] Encryption.BackupRestore_Aes256
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 3 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=3 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 3 个文件, 30 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:55] [ERROR] [RestoreManager] 密码缺失，前置校验失败
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:55] [ERROR] [RestoreManager] 密码错误，前置校验失败
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:55] [INFO] [RestoreManager] Manifest 包含 3 个条目, 源=C:\Users\Administrator\AppData\Local\Temp\backup_test_enc_src_1605506975594401119\
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复完成: 恢复 3 个文件, 跳过 0, 失败 0, 校验 3, 不一致 0
+[       OK ] Encryption.BackupRestore_Aes256 (10 ms)
+[ RUN      ] Encryption.VerifyAfterEncryptedBackup_Passes
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 2 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=2 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 2 个文件, 19 字节, 失败 0
+[       OK ] Encryption.VerifyAfterEncryptedBackup_Passes (5 ms)
+[ RUN      ] Encryption.IncrementWithDifferentPassword_Rejected
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 1 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=1 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 1 个文件, 8 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 1 个条目
+[2026-11-06 11:28:55] [ERROR] [BackupManager] 增量备份失败：密码不一致，需全量重建
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 1 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=1 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 1 个文件, 8 字节, 失败 0
+[       OK ] Encryption.IncrementWithDifferentPassword_Rejected (5 ms)
+[ RUN      ] Encryption.LargeFileStreaming_RoundTrip
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 1 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=1 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 1 个文件, 3145765 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:55] [INFO] [RestoreManager] Manifest 包含 1 个条目, 源=C:\Users\Administrator\AppData\Local\Temp\backup_test_enc_large_src_3349372665674888600\
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复完成: 恢复 1 个文件, 跳过 0, 失败 0, 校验 1, 不一致 0
+[       OK ] Encryption.LargeFileStreaming_RoundTrip (63 ms)
+[ RUN      ] Encryption.TripleDes_BackupRestore_RoundTrip
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 3 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=3 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 3 个文件, 69 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:55] [ERROR] [RestoreManager] 密码错误，前置校验失败
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复开始
+[2026-11-06 11:28:55] [INFO] [RestoreManager] Manifest 包含 3 个条目, 源=C:\Users\Administrator\AppData\Local\Temp\backup_test_tdes_src_958997609517320771\
+[2026-11-06 11:28:55] [INFO] [RestoreManager] 恢复完成: 恢复 3 个文件, 跳过 0, 失败 0, 校验 3, 不一致 0
+[       OK ] Encryption.TripleDes_BackupRestore_RoundTrip (17 ms)
+[ RUN      ] Encryption.HardLink_EncryptedVerify_NoFalseCorruption
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 2 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=2 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 1 个文件, 17 字节, 失败 0
+[       OK ] Encryption.HardLink_EncryptedVerify_NoFalseCorruption (5 ms)
+[----------] 6 tests from Encryption (108 ms total)
+
+[----------] 1 test from Aes
+[ RUN      ] Aes.NistVector_Aes256_EcbBlock
+[       OK ] Aes.NistVector_Aes256_EcbBlock (0 ms)
+[----------] 1 test from Aes (0 ms total)
+
+[----------] 2 tests from BackupLock
+[ RUN      ] BackupLock.ConcurrentBackup_Rejected
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=4 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 4 个文件, 1033 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 7 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 全量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=0 删除=0 未变化=4
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 0 个文件, 0 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [ERROR] [BackupManager] another backup process is running (PID 11320), wait for it to finish or remove C:\Users\Administrator\AppData\Local\Temp\backup_test_tgt_341346967895165224\\.backup.lock manually
+[       OK ] BackupLock.ConcurrentBackup_Rejected (15 ms)
+[ RUN      ] BackupLock.AtomicAcquire_SingleWinner
+[       OK ] BackupLock.AtomicAcquire_SingleWinner (61 ms)
+[----------] 2 tests from BackupLock (76 ms total)
+
+[----------] 6 tests from Filter
+[ RUN      ] Filter.ByExtension
+[       OK ] Filter.ByExtension (0 ms)
+[ RUN      ] Filter.ExcludeExtension
+[       OK ] Filter.ExcludeExtension (0 ms)
+[ RUN      ] Filter.BySize
+[       OK ] Filter.BySize (0 ms)
+[ RUN      ] Filter.ByTime
+[       OK ] Filter.ByTime (0 ms)
+[ RUN      ] Filter.BySubPath
+[       OK ] Filter.BySubPath (0 ms)
+[ RUN      ] Filter.SkipEmpty
+[       OK ] Filter.SkipEmpty (0 ms)
+[----------] 6 tests from Filter (0 ms total)
+
+[----------] 10 tests from Comparator
+[ RUN      ] Comparator.Unchanged
+[       OK ] Comparator.Unchanged (0 ms)
+[ RUN      ] Comparator.Added
+[       OK ] Comparator.Added (0 ms)
+[ RUN      ] Comparator.ModifiedBySize
+[       OK ] Comparator.ModifiedBySize (0 ms)
+[ RUN      ] Comparator.ModifiedByHash
+[       OK ] Comparator.ModifiedByHash (0 ms)
+[ RUN      ] Comparator.HashSameMeansUnchanged
+[       OK ] Comparator.HashSameMeansUnchanged (0 ms)
+[ RUN      ] Comparator.Deleted
+[       OK ] Comparator.Deleted (0 ms)
+[ RUN      ] Comparator.Mixed
+[       OK ] Comparator.Mixed (0 ms)
+[ RUN      ] Comparator.NoHashProviderConservative
+[       OK ] Comparator.NoHashProviderConservative (0 ms)
+[ RUN      ] Comparator.TypeChangeFileToDirectory
+[       OK ] Comparator.TypeChangeFileToDirectory (0 ms)
+[ RUN      ] Comparator.TypeChangeDirectoryToFile
+[       OK ] Comparator.TypeChangeDirectoryToFile (0 ms)
+[----------] 10 tests from Comparator (0 ms total)
+
+[----------] 2 tests from Manifest
+[ RUN      ] Manifest.RoundTrip
+[       OK ] Manifest.RoundTrip (0 ms)
+[ RUN      ] Manifest.FileCount
+[       OK ] Manifest.FileCount (0 ms)
+[----------] 2 tests from Manifest (1 ms total)
+
+[----------] 5 tests from Sha256
+[ RUN      ] Sha256.EmptyString
+[       OK ] Sha256.EmptyString (0 ms)
+[ RUN      ] Sha256.Abc
+[       OK ] Sha256.Abc (0 ms)
+[ RUN      ] Sha256.Hello
+[       OK ] Sha256.Hello (0 ms)
+[ RUN      ] Sha256.OneMillionA
+[       OK ] Sha256.OneMillionA (3 ms)
+[ RUN      ] Sha256.File
+[       OK ] Sha256.File (0 ms)
+[----------] 5 tests from Sha256 (4 ms total)
+
+[----------] 2 tests from TaskStore
+[ RUN      ] TaskStore.RoundTrip_ChinesePathsAndSpecialPassword
+[       OK ] TaskStore.RoundTrip_ChinesePathsAndSpecialPassword (1 ms)
+[ RUN      ] TaskStore.RoundTrip_NoEncryptionClearsPassword
+[       OK ] TaskStore.RoundTrip_NoEncryptionClearsPassword (0 ms)
+[----------] 2 tests from TaskStore (2 ms total)
+
+[----------] 1 test from VerifySnapshot
+[ RUN      ] VerifySnapshot.EncryptedSnapshotCorruptionDetectedPerSnapshot
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=全量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 1 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=1 修改=0 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 已创建快照 20261106-112855
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 1 个文件, 11 字节, 失败 0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份开始, id=20261106-112855, mode=增量
+[2026-11-06 11:28:55] [INFO] [BackupManager] 扫描完成: 1 个条目
+[2026-11-06 11:28:55] [INFO] [BackupManager] 增量比较完成
+[2026-11-06 11:28:55] [INFO] [BackupManager] 变更统计: 新增=0 修改=1 删除=0 未变化=0
+[2026-11-06 11:28:55] [INFO] [BackupManager] 已创建快照 20261106-112855-1
+[2026-11-06 11:28:55] [INFO] [BackupManager] 备份完成: 写入 1 个文件, 11 字节, 失败 0
+[       OK ] VerifySnapshot.EncryptedSnapshotCorruptionDetectedPerSnapshot (12 ms)
+[----------] 1 test from VerifySnapshot (12 ms total)
+
+[----------] 3 tests from SnapshotManager
+[ RUN      ] SnapshotManager.ListParsesAndSortsNumericSuffix
+[       OK ] SnapshotManager.ListParsesAndSortsNumericSuffix (1 ms)
+[ RUN      ] SnapshotManager.CreateIsUniqueAndCreatesDataDir
+[       OK ] SnapshotManager.CreateIsUniqueAndCreatesDataDir (1 ms)
+[ RUN      ] SnapshotManager.CleanupKeepsNewestAndDeleteIsIdempotent
+[       OK ] SnapshotManager.CleanupKeepsNewestAndDeleteIsIdempotent (1 ms)
+[----------] 3 tests from SnapshotManager (4 ms total)
+
+[----------] 5 tests from TarPacker
+[ RUN      ] TarPacker.RoundTripPreservesFilesAndDirs
+[       OK ] TarPacker.RoundTripPreservesFilesAndDirs (3 ms)
+[ RUN      ] TarPacker.HardLinksPreserved
+[       OK ] TarPacker.HardLinksPreserved (1 ms)
+[ RUN      ] TarPacker.SymlinkPreserved
+C:/Users/Administrator/program/BackupSystem/tests/TarPackerTest.cpp:111: Skipped
+创建符号链接需要开发者模式或管理员权限: CreateSymbolicLinkW failed, error=1314
+
+[  SKIPPED ] TarPacker.SymlinkPreserved (1 ms)
+[ RUN      ] TarPacker.LargeAndEmptyFiles
+[       OK ] TarPacker.LargeAndEmptyFiles (8 ms)
+[ RUN      ] TarPacker.PreorderTraversalOrder
+[       OK ] TarPacker.PreorderTraversalOrder (2 ms)
+[----------] 5 tests from TarPacker (16 ms total)
+
+[----------] 4 tests from FileScanner
+[ RUN      ] FileScanner.MissingRootReturnsFalse
+[       OK ] FileScanner.MissingRootReturnsFalse (0 ms)
+[ RUN      ] FileScanner.ScansSortedTreeWithDirectories
+[       OK ] FileScanner.ScansSortedTreeWithDirectories (1 ms)
+[ RUN      ] FileScanner.CancelStopsEarly
+[       OK ] FileScanner.CancelStopsEarly (0 ms)
+[ RUN      ] FileScanner.SymlinkIsRecordedWithWarning
+C:/Users/Administrator/program/BackupSystem/tests/FileScannerTest.cpp:66: Skipped
+cannot create symlink (需要开发者模式或管理员权限)
+
+[  SKIPPED ] FileScanner.SymlinkIsRecordedWithWarning (0 ms)
+[----------] 4 tests from FileScanner (3 ms total)
+
+[----------] 4 tests from FileSystem
+[ RUN      ] FileSystem.CreateListAndQuery
+[       OK ] FileSystem.CreateListAndQuery (1 ms)
+[ RUN      ] FileSystem.FullPathNormalizesDotDot
+[       OK ] FileSystem.FullPathNormalizesDotDot (0 ms)
+[ RUN      ] FileSystem.MoveAndRemoveAll
+[       OK ] FileSystem.MoveAndRemoveAll (1 ms)
+[ RUN      ] FileSystem.ErrorStringIsReadable
+[       OK ] FileSystem.ErrorStringIsReadable (0 ms)
+[----------] 4 tests from FileSystem (2 ms total)
+
+[----------] 7 tests from EncryptionAlgorithm
+[ RUN      ] EncryptionAlgorithm.Factory_KnownAlgorithms_AndUnknown
+[       OK ] EncryptionAlgorithm.Factory_KnownAlgorithms_AndUnknown (0 ms)
+[ RUN      ] EncryptionAlgorithm.RoundTripAllBlockBoundaries
+[       OK ] EncryptionAlgorithm.RoundTripAllBlockBoundaries (68 ms)
+[ RUN      ] EncryptionAlgorithm.RandomIvPerEncryption
+[       OK ] EncryptionAlgorithm.RandomIvPerEncryption (0 ms)
+[ RUN      ] EncryptionAlgorithm.WrongPasswordDoesNotRecoverPlaintext
+[       OK ] EncryptionAlgorithm.WrongPasswordDoesNotRecoverPlaintext (0 ms)
+[ RUN      ] EncryptionAlgorithm.RejectsMalformedLengths
+[       OK ] EncryptionAlgorithm.RejectsMalformedLengths (0 ms)
+[ RUN      ] EncryptionAlgorithm.TamperedCiphertextIsDetected
+[       OK ] EncryptionAlgorithm.TamperedCiphertextIsDetected (0 ms)
+[ RUN      ] EncryptionAlgorithm.PolymorphicRoundTripViaInterface
+[       OK ] EncryptionAlgorithm.PolymorphicRoundTripViaInterface (0 ms)
+[----------] 7 tests from EncryptionAlgorithm (68 ms total)
+
+[----------] 6 tests from ManifestEdge
+[ RUN      ] ManifestEdge.RejectsEmptyFile
+[       OK ] ManifestEdge.RejectsEmptyFile (0 ms)
+[ RUN      ] ManifestEdge.RejectsWrongHeader
+[       OK ] ManifestEdge.RejectsWrongHeader (0 ms)
+[ RUN      ] ManifestEdge.RejectsInvalidNumber
+[       OK ] ManifestEdge.RejectsInvalidNumber (0 ms)
+[ RUN      ] ManifestEdge.RejectsFileCountMismatch
+[       OK ] ManifestEdge.RejectsFileCountMismatch (0 ms)
+[ RUN      ] ManifestEdge.UnknownFieldsAreIgnored
+[       OK ] ManifestEdge.UnknownFieldsAreIgnored (0 ms)
+[ RUN      ] ManifestEdge.ValidManifestLoads
+[       OK ] ManifestEdge.ValidManifestLoads (0 ms)
+[----------] 6 tests from ManifestEdge (4 ms total)
+
+[----------] 2 tests from Logger
+[ RUN      ] Logger.LevelFilteringAndFileOutput
+[2026-11-06 11:28:55] [ERROR] [Unit] error-should-appear
+[       OK ] Logger.LevelFilteringAndFileOutput (0 ms)
+[ RUN      ] Logger.InitEmptyClosesFile
+[2026-11-06 11:28:55] [ERROR] [Unit] first
+[2026-11-06 11:28:55] [ERROR] [Unit] second-after-close
+[       OK ] Logger.InitEmptyClosesFile (0 ms)
+[----------] 2 tests from Logger (1 ms total)
+
+[----------] 2 tests from ConfigLoader
+[ RUN      ] ConfigLoader.ParsesAllSupportedKeys
+[       OK ] ConfigLoader.ParsesAllSupportedKeys (0 ms)
+[ RUN      ] ConfigLoader.InvalidValuesProduceWarnings
+[       OK ] ConfigLoader.InvalidValuesProduceWarnings (0 ms)
+[----------] 2 tests from ConfigLoader (0 ms total)
+
+[----------] 4 tests from Utf
+[ RUN      ] Utf.RoundTripChineseAndEmoji
+[       OK ] Utf.RoundTripChineseAndEmoji (0 ms)
+[ RUN      ] Utf.EmptyAndAscii
+[       OK ] Utf.EmptyAndAscii (0 ms)
+[ RUN      ] Utf.CaseInsensitiveCompare
+[       OK ] Utf.CaseInsensitiveCompare (0 ms)
+[ RUN      ] Utf.StartsWithNoCase
+[       OK ] Utf.StartsWithNoCase (0 ms)
+[----------] 4 tests from Utf (0 ms total)
+
+[----------] 4 tests from ResidualUtil
+[ RUN      ] ResidualUtil.ParseOldResidual
+[       OK ] ResidualUtil.ParseOldResidual (0 ms)
+[ RUN      ] ResidualUtil.IsTempResidual
+[       OK ] ResidualUtil.IsTempResidual (0 ms)
+[ RUN      ] ResidualUtil.IsCryptoTempResidual
+[       OK ] ResidualUtil.IsCryptoTempResidual (0 ms)
+[ RUN      ] ResidualUtil.IsResidualName
+[       OK ] ResidualUtil.IsResidualName (0 ms)
+[----------] 4 tests from ResidualUtil (0 ms total)
+
+[----------] 2 tests from ParseHHMM
+[ RUN      ] ParseHHMM.Valid
+[       OK ] ParseHHMM.Valid (0 ms)
+[ RUN      ] ParseHHMM.Invalid
+[       OK ] ParseHHMM.Invalid (0 ms)
+[----------] 2 tests from ParseHHMM (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 112 tests from 27 test suites ran. (2824 ms total)
+[  PASSED  ] 110 tests.
+[  SKIPPED ] 2 tests, listed below:
+[  SKIPPED ] TarPacker.SymlinkPreserved
+[  SKIPPED ] FileScanner.SymlinkIsRecordedWithWarning

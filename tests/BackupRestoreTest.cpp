@@ -1104,6 +1104,39 @@ TEST(Encryption, TripleDes_BackupRestore_RoundTrip) {
     testutil::removeAll(tgt);
 }
 
+// 回归测试：加密 + 硬链接，verify 不得因非首个条目缺 cipherSize 而误报损坏
+TEST(Encryption, HardLink_EncryptedVerify_NoFalseCorruption) {
+    const std::wstring src = testutil::makeTempDir(L"hl_enc_src");
+    const std::wstring tgt = testutil::makeTempDir(L"hl_enc_tgt");
+    testutil::writeFile(src + L"original.txt", "hard link content");
+    std::string hlErr;
+    ASSERT_TRUE(FileSystem::createHardLink(src + L"alias.txt", src + L"original.txt", &hlErr));
+
+    BackupConfig cfg;
+    cfg.sourcePath = src;
+    cfg.targetPath = tgt;
+    cfg.mode = BackupMode::Full;
+    cfg.encryption = "aes256";
+    cfg.password = "hl-pw";
+    BackupResult r1 = BackupManager::run(cfg);
+    EXPECT_TRUE(r1.success);
+
+    // 修复前非首个条目 cipherSize 缺失，verify 会报 1 损坏；修复后应全部通过
+    VerifyResult vr = VerifyManager::run(tgt);
+    EXPECT_TRUE(vr.success);
+    EXPECT_TRUE(vr.passed == 2);
+    EXPECT_TRUE(vr.corrupted == 0);
+
+    Manifest m;
+    ASSERT_TRUE(m.loadFromFile(tgt + L"\\manifest.txt"));
+    for (const auto& e : m.entries) {
+        EXPECT_GT(e.cipherSize, 0u);
+    }
+
+    testutil::removeAll(src);
+    testutil::removeAll(tgt);
+}
+
 // 回归测试：verify --repair 自动修复损坏文件
 TEST(Verify, Repair_CorruptedFile_RebuiltFromSource) {
     TestEnv env;

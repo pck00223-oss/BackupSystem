@@ -70,6 +70,7 @@ Windows API     CreateFileW / FindFirstFileW / ReadFile / WriteFile / MoveFileEx
 | 同秒内容变化漏报 | mtime 存 Unix 秒，文件一秒内修改且大小不变时增量永远检测不到 | 保留 100ns 精度 FILETIME，大小相同时比较 100ns mtime，仍相同则 Hash 二次确认 |
 | 混血加密仓库 | 增量备份时换加密方式/密码，未变化文件沿用旧加密，变化文件用新加密，恢复时部分解不开 | 增量前校验 encryption + passwordVerifier 与上一份一致，不一致则要求全量重建；全量模式允许切换但强制重新写入所有文件 |
 | 大文件加密内存溢出 | 整文件读入内存再加密，视频/镜像文件同时占用源+密文多份内存 | AES 加密/解密改为 1MB 分块流式处理 |
+| 加密硬链接 verify 误报 | 硬链接非首个条目不独立复制，未带 `cipher_size`，verify 按明文大小比较密文而误报损坏 | 组装 Manifest 后让非首个条目同步首个条目的 `cipher_size`/`cipher_hash`，并加回归测试 |
 
 ## 目录结构
 
@@ -194,7 +195,7 @@ build\backup_tests.exe
 
 ## 测试与 CI
 
-- **111 个 GoogleTest 用例**（109 通过 + 2 个条件跳过：符号链接用例需要开发者模式/管理员权限），覆盖：备份/恢复/校验/增量检测/双算法加密（AES/3DES 块边界与接口多态）/NIST 标准向量/密码前置校验/快照/崩溃恢复/GUI 任务持久化/大文件流式加密/接口边界/TAR 打包解包/硬链接与符号链接/先序遍历
+- **112 个 GoogleTest 用例**（110 通过 + 2 个条件跳过：符号链接用例需要开发者模式/管理员权限），覆盖：备份/恢复/校验/增量检测/双算法加密（AES/3DES 块边界与接口多态）/加密硬链接 verify 回归/NIST 标准向量/密码前置校验/快照/崩溃恢复/GUI 任务持久化/大文件流式加密/接口边界/TAR 打包解包/硬链接与符号链接/先序遍历
 - 测试环境隔离：`TempDir`（RAII 清理）、`EnvGuard`（环境变量与工作目录还原）、`LoggerGuard`（全局单例复位）
 - 测试依赖：GoogleTest（`find_package(GTest)` 优先；未安装时 CMake 自动 FetchContent 拉取 v1.15.2），运行时零第三方依赖
 - **GitHub Actions CI**：每次 push 自动执行 strict 构建（0 警告）+ 全部测试 + cppcheck（0 告警）+ 加固构建

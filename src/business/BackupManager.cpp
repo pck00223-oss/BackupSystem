@@ -605,6 +605,16 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     manifest.entries = std::move(newEntries);
     manifest.rebuildIndex();
 
+    // 硬链接非首个条目与首个条目共享同一份物理数据（data/ 中用 CreateHardLink 链接），
+    // 密文大小/Hash 必须与首个一致；否则非首个条目 cipherSize 缺失，verify 会按明文大小误报损坏。
+    for (auto& e : manifest.entries) {
+        if (e.info.hardLinkTo.empty()) continue;
+        if (const Manifest::Entry* head = manifest.find(e.info.hardLinkTo)) {
+            e.cipherSize = head->cipherSize;
+            e.cipherHash = head->cipherHash;
+        }
+    }
+
     std::string saveErr;
     if (!manifest.saveToFile(manifestPath, &saveErr)) {
         res.success = false;
