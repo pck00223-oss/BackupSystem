@@ -65,6 +65,7 @@ ciphertext cipher_len bytes
 
 - 未加密时 `iv_len=0`、`cipher_len=plain_len`。
 - 加密时每个新对象使用 `BCryptGenRandom` 生成随机 IV；相同明文块只写入一次，后续直接复用对象。
+- 读取 object 时必须校验 magic/version/长度字段；畸形或截断对象返回明确错误，不得崩溃。
 
 ### 2.2 Object 写入
 
@@ -79,6 +80,13 @@ ciphertext cipher_len bytes
 UTF-8 文本，路径采用 percent-encoding，避免分隔符和换行歧义。
 编码规则：对路径 UTF-8 字节中除 `A-Z a-z 0-9 - _ . /` 之外的字节写成 `%HH`（大写十六进制），
 `=`、制表符、换行、`%` 必须转义。
+
+路径口径：
+
+- 扫描时把 Windows `\` 统一转换成 `/` 后写入 Manifest；
+- 恢复时再转换成 Windows 原生 `\`；
+- `[snapshot] source` 保存源绝对路径（仅用于展示/审计）；
+- 所有 `[file] path` 只能是相对路径，不含盘符、不以 `/` 开头、不允许 `..` 段。
 
 ```text
 [snapshot]
@@ -157,6 +165,9 @@ FileScanner
   -> 原子提交 Manifest / latest
 ```
 
+与上一份快照的路径集合做 diff，得到新增 / 修改 / 删除 / 未变化统计；
+类型变化（文件 ↔ 目录）按“删除 + 新增”统计。
+
 ### 4.1 文件级快速路径
 
 - 上一快照存在同路径文件且 `size + mtime_100ns + attributes` 完全一致：直接复用块列表；
@@ -170,6 +181,11 @@ FileScanner
 - 使用 gear-based rolling hash；
 - 分块必须确定性：相同输入、相同参数 → 相同边界；
 - 参数写入 Manifest 头部（`chunk_min` / `chunk_avg` / `chunk_max`），恢复只依赖 Manifest，不重新分块。
+- 尾块规则：
+  - 空文件不产生块；
+  - 文件整体小于 min：整文件作为唯一块；
+  - 末尾剩余不足 min：自然作为最后一块（允许 < min）；
+  - 任何块不得超过 max。
 
 ---
 
@@ -193,6 +209,13 @@ FileScanner
 - 增量备份要求算法与 verifier 与上一份 Manifest 一致，否则拒绝并提示全量重建；
 - 加密仓库与明文仓库不得混用。
 
+### 5.2.1 已接受的去重信息泄露
+
+- 相同明文块必然映射到同一个 `chunk_id` 和同一个 object；
+- `chunk_id` 是明文块的 SHA-256，仓库内可观察“哪些块相同”，也可被字典攻击比对已知内容块；
+- 这是内容寻址去重的固有取舍，本设计**明确接受**该权衡；
+- 随机 IV 只防止相同块在不同仓库/不同写入时产生相同密文，不隐藏仓库内部的块重复关系。
+
 ### 5.3 算法实现（无继承）
 
 - `Aes256Cipher`：独立具体类，AES-CBC，32 字节 key，16 字节块；
@@ -204,6 +227,16 @@ FileScanner
 ---
 
 ## 6. 一致性、GC 与快照
+
+### 6.0 锁的范围
+
+第一阶段统一使用**排他文件锁**，所有访问 repo 的命令都覆盖整个命令生命周期：
+
+- backup / snapshot prune / gc：排他锁；
+- restore / verify / snapshot list：同样持有排他锁（第一阶段不实现共享读锁）；
+- 目的：禁止 GC 删除 object 的同时 verify/restore 读取该 object；
+- 代价：restore/verify 期间会阻塞 backup/GC，这是第一阶段为正确性和实现简单性接受的取舍；
+- 共享读锁作为后续优化，不进入第一阶段。
 
 ### 6.1 提交顺序
 
@@ -231,8 +264,21 @@ FileScanner
 - `snapshot_id = yyyyMMdd-HHmmss`，同秒冲突追加 `-1`、`-2`；
 - `manifests/<snapshot_id>.manifest` 为唯一真实来源；
 - `refs/latest` 为便捷指针；
-- `--keep N` 在提交成功后清理最旧的 N 份之外的快照；
+- `--keep N` 在提交成功后清理最旧的 N 份之外的快照；清理完成后**自动执行一次 mark-sweep GC**（同一把锁内完成）；
+- `snapshot prune --keep N` 删除最旧 Manifest 后同样**自动执行 mark-sweep GC**；
+- 两种路径都输出回收对象数与字节数；
 - 恢复默认 latest，也支持 `--snapshot <id>`。
+
+### 6.4 恢复语义
+
+- 每个文件先写同目录临时文件，所有块成功后再 `MoveFileEx` 原子替换目标；
+- 任何块失败/解密失败/长度或 hash 不符：删除临时文件，记录失败，不留下半截目标文件；
+- 文件成功后按 Manifest 还原 `mtime_100ns` 与只读/隐藏 attributes；
+- 空目录按 `type=dir` 条目显式创建；
+- 目标存在且类型冲突（文件 ↔ 目录）：
+  - `--overwrite`：先删除旧对象（文件或目录树）再写入；
+  - 无 `--overwrite`：跳过并记录 warning，不计为恢复成功；
+- 所有恢复操作受同一把排他锁保护。
 
 ---
 
@@ -350,6 +396,7 @@ backupv2 gc --repo <dir> [--dry-run]
 ```
 
 可执行文件：`backupv2.exe`，与 v1 的 `backupapp.exe` 并存。
+`backup --keep` 与 `snapshot prune` 在删除旧 Manifest 后都会自动执行 mark-sweep GC，并输出回收统计。
 
 ---
 
@@ -357,20 +404,22 @@ backupv2 gc --repo <dir> [--dry-run]
 
 ### 10.1 GTest
 
-- FastCDC：确定性、最小/最大块、边界输入、重复数据；
-- ChunkStore：相同内容只产生一个 object、不同内容分离、损坏对象识别；
+- FastCDC：确定性、最小/最大块、尾块规则（空文件/小于 min/末尾不足 min）、边界输入、重复数据；
+- ChunkStore：相同内容只产生一个 object、不同内容分离、畸形/截断 object header、损坏对象识别；
 - 加密：AES-256 / 3DES 往返、错误密码、篡改密文、加密 + 去重；
-- Manifest：往返、空文件、空目录、percent-encoded 路径、块引用；
-- Snapshot：创建、列表、latest、指定快照恢复、prune；
-- Backup/Restore：全量、增量、修改、删除、插入数据后的高去重率、恢复 hash；
+- Manifest：往返、空文件、空目录、percent-encoded 路径、`\`→`/` 转换、拒绝盘符/绝对路径/`..`、块引用；
+- Snapshot：创建、列表、latest、指定快照恢复、prune 后自动 GC；
+- Backup/Restore：全量、增量、修改、删除统计、插入数据后的高去重率、恢复 hash；
+- Restore：临时文件原子替换、失败不留半截、mtime/attributes 还原、空目录、文件↔目录冲突两种策略；
+- 并发：GC 与 verify/restore/backup 的排他锁串行化；
 - Verify：块级/文件级/仓库级、缺块、坏块、partial（无密码）；
 - GC：只删除不可达对象、dry-run 不删除；
 - 环境隔离：TempDir / EnvGuard / LoggerGuard。
 
 ### 10.2 脚本
 
-- `scripts/run_checks.ps1`：strict 构建 + ctest + cppcheck + hardening；
-- `scripts/test-backup-demo.ps1`：适配 v2 仓库布局，生成两版数据、展示去重统计、篡改对象、verify、restore、GC。
+- `v2/scripts/run_checks.ps1`：strict 构建 + ctest + cppcheck + hardening；
+- `v2/scripts/test-backup-demo.ps1`：适配 v2 仓库布局，生成两版数据、展示去重统计、篡改对象、verify、restore、GC。
 
 ### 10.3 CI
 
@@ -402,3 +451,26 @@ backupv2 gc --repo <dir> [--dry-run]
 - 不做复杂崩溃回滚 journal；
 - 不做多线程分块/并行上传；
 - 不使用继承、基类、虚函数。
+
+---
+
+## 13. 工程布局与构建
+
+```text
+BackupSystem/
+├── （v1 现有文件保持在仓库根目录，不做迁移）
+├── v2/
+│   ├── CMakeLists.txt       独立工程，target: backupv2
+│   ├── include/
+│   ├── src/
+│   ├── tests/
+│   └── scripts/
+├── .github/workflows/
+│   ├── ci.yml               （v1 现有 CI，保持不动）
+│   └── ci-v2.yml
+```
+
+- v2 使用独立 `v2/CMakeLists.txt`，生成 `v2/build/backupv2.exe`；
+- v1 的 `CMakeLists.txt` 与源代码保持不动；
+- CI 新增独立 v2 job：configure `v2/` → strict 构建 → ctest → cppcheck；
+- 第一阶段先完成 v2 core，GUI/调度/TAR 不进入 v2 目录。
