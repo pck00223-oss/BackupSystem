@@ -133,6 +133,26 @@ if(NOT MSVC)
     target_link_options(backupgui PRIVATE -municode)
 endif()
 
+# ============ Qt6 GUI 入口（可选：找到 Qt6 Widgets 才启用，复用 backup_core）============
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if(Qt6_FOUND)
+    add_executable(backupgui_qt WIN32
+        src/gui/qt/qt_main.cpp
+        src/gui/qt/MainWindow.cpp
+        src/gui/qt/TaskDialog.cpp
+        src/gui/qt/Worker.cpp
+        src/gui/TaskStore.cpp
+        include/gui/qt/MainWindow.h
+        include/gui/qt/TaskDialog.h
+        include/gui/qt/Worker.h
+    )
+    set_target_properties(backupgui_qt PROPERTIES AUTOMOC ON)
+    target_link_libraries(backupgui_qt PRIVATE backup_core backup_flags Qt6::Widgets crypt32)
+    message(STATUS "Qt6 found: ${Qt6_DIR}; target 'backupgui_qt' enabled")
+else()
+    message(STATUS "Qt6 not found; 'backupgui_qt' target skipped (Win32 'backupgui' still available)")
+endif()
+
 # ============ 单元/集成测试 ============
 enable_testing()
 

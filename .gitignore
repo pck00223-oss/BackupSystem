@@ -19,3 +19,6 @@ out/
 .vs/
 .idea/
 *.user
+
+# Qt 安装临时日志
+aqtinstall.log
