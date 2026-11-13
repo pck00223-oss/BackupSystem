@@ -30,6 +30,13 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $AppExe = Join-Path $projectRoot 'build\backupapp.exe'
 if (-not (Test-Path $AppExe)) { throw "找不到 $AppExe，请先 cmake --build build" }
 
+# 动态链接的 exe 依赖 MinGW 运行时 DLL；若当前 PATH 找不到编译器，自动定位并加入 PATH。
+if (-not (Get-Command g++ -ErrorAction SilentlyContinue)) {
+    $toolchain = Get-ChildItem 'C:\Users\Administrator\AppData\Local\Microsoft\WinGet\Packages' `
+        -Recurse -Filter 'g++.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($toolchain) { $env:PATH = (Split-Path $toolchain.FullName) + ';' + $env:PATH }
+}
+
 $src = Join-Path $WorkRoot 'source'
 $bak = Join-Path $WorkRoot 'backup'
 $restore = Join-Path $WorkRoot 'restored'
