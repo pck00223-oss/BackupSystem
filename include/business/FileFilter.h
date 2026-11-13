@@ -15,7 +15,6 @@ namespace backup {
 class FileFilter {
 public:
     void setRule(const FilterRule& rule) { rule_ = rule; }
-    const FilterRule& rule() const { return rule_; }
 
     // 过滤 in，仅保留匹配的文件；目录是否保留由 keepDirectories 决定。
     std::vector<FileInfo> filter(const std::vector<FileInfo>& in, bool keepDirectories) const;

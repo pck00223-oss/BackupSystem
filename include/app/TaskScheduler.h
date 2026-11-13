@@ -32,7 +32,6 @@ public:
     void setCallback(TaskCallback cb) { callback_ = std::move(cb); }
 
     void addTask(ScheduledTask task);
-    bool removeTask(const std::wstring& name);
 
     // 启动后台调度线程：每 30 秒检查一次，命中 HH:MM 且当天未执行则触发。
     void start();

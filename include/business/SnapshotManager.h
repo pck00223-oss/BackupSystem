@@ -38,9 +38,6 @@ public:
 
     // 构造快照的 data 目录路径：<target>/snapshots/<timestamp>/data
     static std::wstring snapshotDataDir(const std::wstring& targetPath, const std::wstring& timestamp);
-
-    // 构造快照的 manifest 路径：<target>/snapshots/<timestamp>/manifest.txt
-    static std::wstring snapshotManifestPath(const std::wstring& targetPath, const std::wstring& timestamp);
 };
 
 }  // namespace backup

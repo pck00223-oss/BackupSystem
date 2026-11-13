@@ -19,10 +19,6 @@ std::wstring SnapshotManager::snapshotDataDir(const std::wstring& targetPath, co
     return snapshotDir(targetPath, timestamp) + L"\\data";
 }
 
-std::wstring SnapshotManager::snapshotManifestPath(const std::wstring& targetPath, const std::wstring& timestamp) {
-    return snapshotDir(targetPath, timestamp) + L"\\manifest.txt";
-}
-
 namespace {
 
 // 检查字符串指定区间是否全为数字字符。

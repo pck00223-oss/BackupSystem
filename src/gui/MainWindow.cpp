@@ -785,13 +785,6 @@ static INT_PTR CALLBACK newTaskDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARA
     return DefWindowProcW(hDlg, msg, wParam, lParam);
 }
 
-bool MainWindow::showNewTaskDialog(BackupTask& outTask) {
-    NewTaskDlgData data;
-    data.outTask = &outTask;
-    INT_PTR result = DialogBoxParamW(hInstance_, L"NewTaskDlg", hwnd_, newTaskDlgProc, (LPARAM)&data);
-    return result == IDOK;
-}
-
 void MainWindow::onNewTask() {
     BackupTask task;
     NewTaskDlgData data;

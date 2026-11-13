@@ -85,7 +85,6 @@ add_library(backup_core STATIC
     src/core/BackupLock.cpp
     src/core/BcryptBlockCipher.cpp
     src/core/EncryptionFactory.cpp
-    src/core/Error.cpp
     src/core/HashCalculator.cpp
     src/core/Logger.cpp
     src/core/TimeUtil.cpp

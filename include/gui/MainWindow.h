@@ -124,9 +124,6 @@ private:
     // 从后台线程安全地追加日志（分配字符串，PostMessage 给 UI）。
     void postLog(const std::wstring& text);
 
-    // 新建备份对话框（模态）。返回 true 表示用户确认，task 输出新任务。
-    bool showNewTaskDialog(BackupTask& outTask);
-
     // 简单输入对话框（用于恢复目标路径等）。
     bool showInputDialog(const std::wstring& title, const std::wstring& prompt,
                          const std::wstring& defaultValue, std::wstring& outValue);

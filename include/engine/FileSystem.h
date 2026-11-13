@@ -110,7 +110,6 @@ public:
 
     // 将 Win32 错误码转为可读文本。
     static std::wstring errorString(DWORD err);
-    static DWORD lastError() { return ::GetLastError(); }
 };
 
 }  // namespace backup

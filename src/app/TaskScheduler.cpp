@@ -17,15 +17,6 @@ void TaskScheduler::addTask(ScheduledTask task) {
     tasks_.push_back(std::move(task));
 }
 
-bool TaskScheduler::removeTask(const std::wstring& name) {
-    std::lock_guard<std::mutex> lk(mu_);
-    const auto it = std::find_if(tasks_.begin(), tasks_.end(),
-                                 [&name](const ScheduledTask& t) { return t.name == name; });
-    if (it == tasks_.end()) return false;
-    tasks_.erase(it);
-    return true;
-}
-
 void TaskScheduler::start() {
     if (running_.exchange(true)) return;
     cancelFlag_.store(false);  // 重置取消标志，支持 stop() 后重新 start()
