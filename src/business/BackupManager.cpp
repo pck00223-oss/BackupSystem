@@ -14,6 +14,7 @@
 #include "business/FileFilter.h"
 #include "business/Manifest.h"
 #include "business/SnapshotManager.h"
+#include "core/CompressedFile.h"
 #include "core/IEncryptionAlgorithm.h"
 #include "core/PasswordUtil.h"
 #include "core/BackupLock.h"
@@ -117,6 +118,46 @@ static bool writeEncryptedFile(const std::wstring& src, const std::wstring& dst,
         return false;
     }
     return true;
+}
+
+// 统一存储：处理仅压缩 / 仅加密 / 压缩+加密（先压缩再加密）。
+// 至少开启压缩或加密之一时调用；两者都不开由主循环直接 FileCopier 处理。
+static bool storeDataFile(const std::wstring& src, const std::wstring& dst,
+                          bool useCompression, const std::string& compAlgo,
+                          bool useEncryption, const std::string& encAlgo,
+                          const std::string& password,
+                          const std::function<bool()>& cancel,
+                          std::string& err) {
+    std::wstring intermediate;            // 压缩中间产物（若有）
+    const std::wstring* input = &src;
+
+    if (useCompression) {
+        const size_t pos = dst.find_last_of(L"\\/");
+        const std::wstring dir = (pos == std::wstring::npos) ? L"." : dst.substr(0, pos);
+        wchar_t tmp[MAX_PATH];
+        if (::GetTempFileNameW(dir.c_str(), L"cmp", 0, tmp) == 0) {
+            err = "cannot create compression temp file";
+            return false;
+        }
+        intermediate = tmp;
+        if (!CompressedFile::compressFile(src, intermediate, compAlgo, err, cancel)) {
+            ::DeleteFileW(intermediate.c_str());
+            return false;
+        }
+        input = &intermediate;
+    }
+
+    bool ok = false;
+    if (useEncryption) {
+        ok = writeEncryptedFile(*input, dst, encAlgo, password, err);
+    } else {
+        // 仅压缩：原子移动压缩产物到目标
+        ok = ::MoveFileExW(input->c_str(), dst.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
+        if (!ok) err = "atomic move compressed file failed";
+    }
+
+    if (!intermediate.empty()) ::DeleteFileW(intermediate.c_str());
+    return ok;
 }
 
 // 从当前 data/ 和 manifest.txt 创建快照。
@@ -333,7 +374,29 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         (config.encryption == "aes256" || config.encryption == "3des") && !config.password.empty();
     const bool encryptionChanged = hasPrevious && (prevEncrypted != curEncrypted);
 
+    // 压缩方式一致性：增量下未变化文件不会重写，换压缩算法（none↔huffman/rle、
+    // huffman↔rle）会产生混血仓库，必须按具体算法名比较，不能只看是否压缩。
+    const std::string prevCompName =
+        (hasPrevious && !previous.meta.compression.empty() && previous.meta.compression != "none")
+            ? previous.meta.compression : "none";
+    const std::string curCompName =
+        (config.compression == "huffman" || config.compression == "rle")
+            ? config.compression : "none";
+    const bool compressionChanged = hasPrevious && (prevCompName != curCompName);
+
     if (incremental) {
+        if (prevCompName != curCompName) {
+            res.success = false;
+            const std::wstring msg =
+                std::wstring(L"增量备份失败：压缩算法不一致。上一份备份为 \"") +
+                utf8ToWide(prevCompName) + L"\"，本次配置为 \"" + utf8ToWide(curCompName) +
+                L"\"。请改用全量备份重建仓库，或保持与上一份相同的压缩算法。";
+            res.errors.push_back(msg);
+            log.error(L"BackupManager", L"增量备份失败：压缩算法不一致，需全量重建");
+            appendHistory(config.targetPath, res);
+            res.endTime = formatNowWide();
+            return res;
+        }
         if (prevEncrypted != curEncrypted) {
             res.success = false;
             const std::wstring msg = std::wstring(L"增量备份失败：加密方式不一致。上一份备份") +
@@ -386,13 +449,13 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
 
     // 全量模式下加密方式变化：所有文件需要重新写入（用新加密方式），
     // 把 Unchanged 提升为 Modified，确保 data/ 中旧加密数据被覆盖。
-    if (encryptionChanged && !incremental) {
+    if ((encryptionChanged || compressionChanged) && !incremental) {
         for (auto& c : changes) {
             if (c.change == FileChangeType::Unchanged) {
                 c.change = FileChangeType::Modified;
             }
         }
-        log.info(L"BackupManager", L"全量模式加密方式变化，所有文件标记为修改以重新写入");
+        log.info(L"BackupManager", L"全量模式压缩/加密方式变化，所有文件标记为修改以重新写入");
     }
 
     for (const auto& c : changes) {
@@ -532,11 +595,16 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         }
 
         std::string copyErr;
+        const bool useCompression =
+            config.compression == "huffman" || config.compression == "rle";
         const bool useEncryption =
             (config.encryption == "aes256" || config.encryption == "3des") && !config.password.empty();
         bool copyOk = false;
-        if (useEncryption) {
-            copyOk = writeEncryptedFile(absSrc, absDst, config.encryption, config.password, copyErr);
+        if (useCompression || useEncryption) {
+            copyOk = storeDataFile(absSrc, absDst,
+                                   useCompression, config.compression,
+                                   useEncryption, config.encryption,
+                                   config.password, cancel, copyErr);
         } else {
             copyOk = FileCopier::copyFile(absSrc, absDst, &copyErr, cancel);
         }
@@ -557,8 +625,9 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
         e.info.hash = std::move(hash);
         e.info.hashed = true;
         e.dataPath = c.info.relativePath;
-        // 加密时记录密文大小和 Hash，供 verify 校验（data/ 中存的是 IV+密文，不是明文）
-        if (useEncryption) {
+        // 经过压缩或加密时，记录最终落盘文件的大小和 Hash，供 verify 校验
+        //（data/ 中存的是转换后的字节，不是原始明文；字段沿用 cipher 命名）。
+        if (useCompression || useEncryption) {
             FileInfo fi;
             if (FileSystem::getFileInfo(absDst, fi)) {
                 e.cipherSize = fi.size;
@@ -598,6 +667,9 @@ BackupResult BackupManager::run(const BackupConfig& config, const Options& opts)
     manifest.meta.created = formatNowUtf8();
     manifest.meta.backupType = (config.mode == BackupMode::Incremental) ? "incremental" : "full";
     manifest.meta.fileCount = static_cast<uint64_t>(newEntries.size());
+    if (!config.compression.empty() && config.compression != "none") {
+        manifest.meta.compression = config.compression;
+    }
     if (!config.encryption.empty() && config.encryption != "none") {
         manifest.meta.encryption = config.encryption;
         manifest.meta.passwordVerifier = computePasswordVerifier(config.password);

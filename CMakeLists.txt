@@ -84,9 +84,13 @@ endif()
 add_library(backup_core STATIC
     src/core/BackupLock.cpp
     src/core/BcryptBlockCipher.cpp
+    src/core/CompressedFile.cpp
+    src/core/CompressionFactory.cpp
     src/core/EncryptionFactory.cpp
     src/core/HashCalculator.cpp
+    src/core/HuffmanCompressor.cpp
     src/core/Logger.cpp
+    src/core/RleCompressor.cpp
     src/core/TimeUtil.cpp
     src/core/Utf.cpp
     src/engine/FileCopier.cpp
@@ -170,6 +174,8 @@ add_executable(backup_tests
     tests/LoggerTest.cpp
     tests/ManifestEdgeTest.cpp
     tests/EncryptionAlgorithmTest.cpp
+    tests/CompressionAlgorithmTest.cpp
+    tests/CompressedFileTest.cpp
     tests/FileSystemTest.cpp
     tests/FileCopierTest.cpp
     tests/FileScannerTest.cpp

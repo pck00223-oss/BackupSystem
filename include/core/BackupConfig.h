@@ -42,13 +42,11 @@ struct BackupConfig {
     std::wstring scheduleTime;    // 定时执行时间 "HH:MM"，空表示手动/立即
     bool overwriteOnRestore = false;  // 恢复时目标文件已存在且内容不同：true 覆盖，false 跳过
     int keepSnapshots = 0;       // 保留最近 N 份快照，0=不保留快照（单镜像模式）
-    std::string encryption;       // 加密方式："none" / "aes256"
+    std::string compression;      // 压缩方式："none" / "huffman" / "rle"
+    std::string encryption;       // 加密方式："none" / "aes256" / "3des"
     std::string password;         // 加密密码（encryption != "none" 时需要）
 
-    // ---- 扩展预留（Phase 7/8）----
-    // std::string compression;   // "none" / "zstd"
-    // std::string encryption;    // "none" / "aes"
-    // std::wstring password;     // 注意：不得写入普通日志
+    // 注意：密码不得写入普通日志；备份时先压缩再加密，恢复时先解密再解压。
 };
 
 }  // namespace backup

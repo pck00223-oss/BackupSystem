@@ -123,6 +123,10 @@ bool ConfigLoader::parseLines(const std::vector<std::string>& lines,
             } catch (...) {
                 warnings.push_back(L"keep_snapshots 格式无效，忽略: " + utf8ToWide(val));
             }
+        } else if (key == "compression") {
+            if (val == "huffman" || val == "rle") out.compression = val;
+            else if (val == "none") out.compression = "";
+            else warnings.push_back(L"未知压缩方式: " + utf8ToWide(val) + L"，支持 huffman/rle");
         } else {
             warnings.push_back(L"未知配置项: " + utf8ToWide(key));
         }

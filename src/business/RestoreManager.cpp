@@ -9,6 +9,7 @@
 
 #include "business/Manifest.h"
 #include "business/SnapshotManager.h"
+#include "core/CompressedFile.h"
 #include "core/IEncryptionAlgorithm.h"
 #include "core/PasswordUtil.h"
 #include "core/HashCalculator.h"
@@ -123,6 +124,45 @@ bool decryptAndWriteFile(const std::wstring& src, const std::wstring& dst,
         return false;
     }
     return true;
+}
+
+// 统一恢复：处理仅压缩 / 仅加密 / 加密+压缩（先解密再解压，与备份顺序相反）。
+bool loadDataFile(const std::wstring& src, const std::wstring& dst,
+                  bool compressed, const std::string& compAlgo,
+                  bool encrypted, const std::string& encAlgo,
+                  const std::string& password,
+                  const std::function<bool()>& cancel,
+                  std::string& err) {
+    std::wstring decrypted;             // 解密中间产物（若有）
+    const std::wstring* input = &src;
+
+    if (encrypted) {
+        const size_t pos = dst.find_last_of(L"\\/");
+        const std::wstring dir = (pos == std::wstring::npos) ? L"." : dst.substr(0, pos);
+        wchar_t tmp[MAX_PATH];
+        if (::GetTempFileNameW(dir.c_str(), L"dec", 0, tmp) == 0) {
+            err = "cannot create decryption temp file";
+            return false;
+        }
+        decrypted = tmp;
+        if (!decryptAndWriteFile(src, decrypted, encAlgo, password, err)) {
+            ::DeleteFileW(decrypted.c_str());
+            return false;
+        }
+        input = &decrypted;
+    }
+
+    bool ok = false;
+    if (compressed) {
+        ok = CompressedFile::decompressFile(*input, dst, compAlgo, err, cancel);
+    } else if (encrypted) {
+        // 仅加密：原子移动解密产物到目标
+        ok = ::MoveFileExW(input->c_str(), dst.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
+        if (!ok) err = "atomic move decrypted file failed";
+    }
+
+    if (!decrypted.empty()) ::DeleteFileW(decrypted.c_str());
+    return ok;
 }
 
 }  // namespace
@@ -289,18 +329,22 @@ RestoreResult RestoreManager::run(const RestoreConfig& config,
         }
 
         std::string copyErr;
+        const bool compressed =
+            manifest.meta.compression == "huffman" || manifest.meta.compression == "rle";
         const bool encrypted =
             manifest.meta.encryption == "aes256" || manifest.meta.encryption == "3des";
         bool copyOk = false;
-        if (encrypted) {
-            if (config.password.empty()) {
+        if (encrypted || compressed) {
+            if (encrypted && config.password.empty()) {
                 ++res.failed;
                 res.errors.push_back(std::wstring(L"备份已加密，需要 --password 才能恢复: ") + rel);
                 log.error(L"RestoreManager", L"备份已加密，需要密码: " + rel);
                 continue;
             }
-            copyOk = decryptAndWriteFile(srcAbs, dstAbs, manifest.meta.encryption,
-                                         config.password, copyErr);
+            copyOk = loadDataFile(srcAbs, dstAbs,
+                                  compressed, manifest.meta.compression,
+                                  encrypted, manifest.meta.encryption,
+                                  config.password, cancel, copyErr);
         } else {
             copyOk = FileCopier::copyFile(srcAbs, dstAbs, &copyErr, cancel);
         }

@@ -25,7 +25,8 @@ public:
         std::string created;        // 创建时间文本
         std::string backupType;     // "full" / "incremental"
         uint64_t fileCount = 0;
-        std::string encryption;      // "none" / "aes256"
+        std::string compression;     // "none" / "huffman" / "rle"
+        std::string encryption;      // "none" / "aes256" / "3des"
         std::string passwordVerifier; // 加密时的密码验证标记（SHA256(password+固定盐)），用于增量时检测密码切换
     };
 
