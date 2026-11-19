@@ -23,6 +23,8 @@ BackupConfig BackupTask::toConfig() const {
     cfg.sourcePath = sourcePath;
     cfg.targetPath = targetPath;
     cfg.mode = mode;
+    cfg.compression = (compression == "huffman" || compression == "rle")
+                          ? compression : "";
     cfg.encryption = encryption;
     cfg.password = password;
     cfg.keepSnapshots = keepSnapshots;
@@ -106,6 +108,11 @@ std::vector<BackupTask> TaskStore::loadFrom(const std::wstring& path) {
         if (std::getline(ss, token, '\t')) {
             try { task.keepSnapshots = std::stoi(token); } catch (...) { task.keepSnapshots = 0; }
         }
+        // 第 8 列 compression（旧文件无此列，默认不压缩）；去除行尾 CR
+        if (std::getline(ss, token)) {
+            if (!token.empty() && token.back() == '\r') token.pop_back();
+            if (token == "huffman" || token == "rle") task.compression = token;
+        }
 
         tasks.push_back(task);
     }
@@ -122,13 +129,17 @@ bool TaskStore::saveTo(const std::wstring& path, const std::vector<BackupTask>& 
 
     for (const auto& task : tasks) {
         const std::string encPwd = encryptPassword(task.password);  // DPAPI 加密
+        const std::string compName =
+            (task.compression == "huffman" || task.compression == "rle")
+                ? task.compression : "none";
         file << wideToUtf8(task.name) << '\t'
              << wideToUtf8(task.sourcePath) << '\t'
              << wideToUtf8(task.targetPath) << '\t'
              << (task.mode == BackupMode::Incremental ? "incremental" : "full") << '\t'
              << task.encryption << '\t'
              << (encPwd.empty() ? "" : encPwd) << '\t'
-             << task.keepSnapshots << '\n';
+             << task.keepSnapshots << '\t'
+             << compName << '\n';
     }
     return true;
 }

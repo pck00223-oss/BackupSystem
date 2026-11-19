@@ -33,6 +33,11 @@ TaskDialog::TaskDialog(QWidget* parent) : QDialog(parent) {
     modeCombo_->addItem(QStringLiteral("全量备份"));
     modeCombo_->addItem(QStringLiteral("增量备份"));
 
+    compressCombo_ = new QComboBox(this);
+    compressCombo_->addItem(QStringLiteral("不压缩"));
+    compressCombo_->addItem(QStringLiteral("Huffman 压缩"));
+    compressCombo_->addItem(QStringLiteral("RLE 压缩"));
+
     encryptCombo_ = new QComboBox(this);
     encryptCombo_->addItem(QStringLiteral("不加密"));
     encryptCombo_->addItem(QStringLiteral("AES-256"));
@@ -51,6 +56,7 @@ TaskDialog::TaskDialog(QWidget* parent) : QDialog(parent) {
     form->addRow(QStringLiteral("源目录:"), srcRow);
     form->addRow(QStringLiteral("目标目录:"), tgtRow);
     form->addRow(QStringLiteral("备份模式:"), modeCombo_);
+    form->addRow(QStringLiteral("压缩:"), compressCombo_);
     form->addRow(QStringLiteral("加密:"), encryptCombo_);
     form->addRow(QStringLiteral("密码:"), passwordEdit_);
     form->addRow(QStringLiteral("保留快照:"), keepSpin_);
@@ -93,6 +99,13 @@ void TaskDialog::setTask(const backup::gui::BackupTask& task) {
     sourceEdit_->setText(QString::fromStdWString(task.sourcePath));
     targetEdit_->setText(QString::fromStdWString(task.targetPath));
     modeCombo_->setCurrentIndex(task.mode == backup::BackupMode::Incremental ? 1 : 0);
+    if (task.compression == "huffman") {
+        compressCombo_->setCurrentIndex(1);
+    } else if (task.compression == "rle") {
+        compressCombo_->setCurrentIndex(2);
+    } else {
+        compressCombo_->setCurrentIndex(0);
+    }
     if (task.encryption == "aes256") {
         encryptCombo_->setCurrentIndex(1);
     } else if (task.encryption == "3des") {
@@ -125,6 +138,8 @@ bool TaskDialog::result(backup::gui::BackupTask& out) const {
     out.mode = modeCombo_->currentIndex() == 1
                    ? backup::BackupMode::Incremental
                    : backup::BackupMode::Full;
+    const int compSel = compressCombo_->currentIndex();
+    out.compression = (compSel == 1) ? "huffman" : (compSel == 2) ? "rle" : "none";
     out.encryption = (encSel == 1) ? "aes256" : (encSel == 2) ? "3des" : "none";
     out.password = passwordEdit_->text().toUtf8().toStdString();
     out.keepSnapshots = keepSpin_->value();

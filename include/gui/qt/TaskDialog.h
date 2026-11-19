@@ -30,6 +30,7 @@ private:
     QLineEdit* sourceEdit_ = nullptr;
     QLineEdit* targetEdit_ = nullptr;
     QComboBox* modeCombo_ = nullptr;
+    QComboBox* compressCombo_ = nullptr;
     QComboBox* encryptCombo_ = nullptr;
     QLineEdit* passwordEdit_ = nullptr;
     QSpinBox* keepSpin_ = nullptr;

@@ -91,11 +91,11 @@ void MainWindow::buildUi() {
     btnGrid->addWidget(cancelBtn_, 1, 3);
     taskLay->addLayout(btnGrid);
 
-    table_ = new QTableWidget(0, 5, taskPanel);
+    table_ = new QTableWidget(0, 6, taskPanel);
     table_->setHorizontalHeaderLabels(
         {QStringLiteral("任务名称"), QStringLiteral("源目录"),
          QStringLiteral("目标目录"), QStringLiteral("模式"),
-         QStringLiteral("加密")});
+         QStringLiteral("压缩"), QStringLiteral("加密")});
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -202,10 +202,14 @@ void MainWindow::refreshTable() {
                         make(t.mode == backup::BackupMode::Incremental
                                  ? QStringLiteral("增量")
                                  : QStringLiteral("全量")));
+        QString comp = QStringLiteral("不压缩");
+        if (t.compression == "huffman") comp = QStringLiteral("Huffman");
+        else if (t.compression == "rle") comp = QStringLiteral("RLE");
+        table_->setItem(row, 4, make(comp));
         QString enc = QStringLiteral("不加密");
         if (t.encryption == "aes256") enc = QStringLiteral("AES-256");
         else if (t.encryption == "3des") enc = QStringLiteral("3DES");
-        table_->setItem(row, 4, make(enc));
+        table_->setItem(row, 5, make(enc));
     }
     if (!tasks_.empty()) table_->selectRow(0);
 }
